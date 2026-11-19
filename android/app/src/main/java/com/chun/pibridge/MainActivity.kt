@@ -455,20 +455,30 @@ private fun ConnectionCard(
 }
 
 @Composable
-private fun ColumnScope.SessionList(store: BridgeStore, state: BridgeState) {
-    var onlyChat by remember { mutableStateOf(true) }
+fun ColumnScope.SessionList(store: BridgeStore, state: BridgeState) {
+    var sort by remember { mutableStateOf(store.profiles.sessionSort) }
     var query by remember { mutableStateOf("") }
+    val listState = rememberLazyListState()
+    LaunchedEffect(sort) { listState.scrollToItem(0) }
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text("セッション", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-        FilterChip(
-            selected = onlyChat,
-            onClick = { onlyChat = !onlyChat },
-            label = { Text("チャットのみ") },
-            modifier = Modifier.testTag("chatOnly"),
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(SessionSort.DEFAULT to "デフォルト", SessionSort.RECENT to "最近使った順")
+                .forEach { (value, label) ->
+                    FilterChip(
+                        selected = sort == value,
+                        onClick = {
+                            store.profiles.sessionSort = value
+                            sort = value
+                        },
+                        label = { Text(label) },
+                        modifier = Modifier.testTag("sessionSort:${value.name}"),
+                    )
+                }
+        }
     }
     OutlinedTextField(
         query,
@@ -483,12 +493,13 @@ private fun ColumnScope.SessionList(store: BridgeStore, state: BridgeState) {
     )
     val filtered =
         state.sessions.filter {
-            (!onlyChat || it.optBoolean("bridge")) &&
+            it.optBoolean("bridge") &&
                 (query.isBlank() ||
                     listOf("sessionName", "tab", "cwd", "workspace").any { field ->
                         it.optString(field).contains(query, true)
                     })
         }
+    val groups = sessionGroups(filtered, sort) { store.profiles.lastOpened(state.profileId, it) }
     if (filtered.isEmpty())
         Column(
             Modifier.weight(1f).fillMaxWidth().padding(32.dp),
@@ -507,8 +518,7 @@ private fun ColumnScope.SessionList(store: BridgeStore, state: BridgeState) {
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
-                if (onlyChat) "既存のPiでは /reload でチャットを有効にできます。\n端末操作には「チャットのみ」を解除してください。"
-                else "接続先と検索条件を確認してください。",
+                "接続先と検索条件を確認してください。",
                 Modifier.padding(top = 8.dp),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -517,27 +527,22 @@ private fun ColumnScope.SessionList(store: BridgeStore, state: BridgeState) {
     else
         LazyColumn(
             Modifier.weight(1f).fillMaxWidth().testTag("sessions"),
+            state = listState,
             contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            filtered
-                .groupBy { it.optString("workspace") }
-                .toSortedMap()
-                .forEach { (workspace, sessions) ->
-                    item {
+            groups.forEach { (workspace, sessions) ->
+                    if (workspace != null) item(key = "workspace:$workspace") {
                         Text(
                             workspace,
-                            Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp),
+                            Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp)
+                                .testTag("workspaceHeader:$workspace"),
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     items(
-                        sessions.sortedWith(
-                            compareByDescending<JSONObject> { it.optString("state") == "blocked" }
-                                .thenByDescending { it.optBoolean("bridge") }
-                                .thenBy { it.optString("sessionName") }
-                        ),
+                        sessions,
                         key = { it.optString("sessionKey") },
                     ) { s ->
                         val c = state.chats[s.optString("sessionKey")]
@@ -564,9 +569,7 @@ private fun ColumnScope.SessionList(store: BridgeStore, state: BridgeState) {
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        s.optString("sessionName").ifBlank {
-                                            s.optString("tab").ifBlank { s.optString("paneId") }
-                                        },
+                                        sessionTitle(s),
                                         Modifier.weight(1f).padding(end = 8.dp),
                                         style = MaterialTheme.typography.titleSmall,
                                         maxLines = 1,

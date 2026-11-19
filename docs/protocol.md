@@ -24,7 +24,7 @@ relayは診断メッセージをstdoutへ混ぜません。
 |---|---|---|
 | `hello` | `protocol: 1` | バージョンとcapabilities |
 | `ping` | なし | `pong: true` |
-| `sessions.list` | なし | `sessions` 配列。各行に`workspaceId`と`tabId`を含む |
+| `sessions.list` | なし | `sessions` 配列。各行に`workspaceId`と`tabId`、bridge接続済みなら`lastActivityAt`を含む |
 | `workspaces.list` | なし | `workspaces` 配列。各要素は`id`と`label` |
 | `session.create` | `workspaceId`, UUID形式の`requestId` | `tabId`, `sessionKey`, `started`, 任意の`startupError` |
 | `session.open` | `sessionKey`, 任意の`since` | `info`, `entries`, `leafId`, `seq`, `reset` |
@@ -34,6 +34,13 @@ relayは診断メッセージをstdoutへ混ぜません。
 | `terminal.read` | `paneId`, 任意の`source` | herdrのpane.read結果 |
 | `terminal.input` | `paneId`, `text`, 任意の`keys` | herdrのpane.send_input結果 |
 | `terminal.keys` | `paneId`, `keys` | herdrのpane.send_keys結果 |
+
+`lastActivityAt`は、bridgeのinfoが返すsessionFileの更新時刻をUnix epochミリ秒で表した値です。
+ファイルが不明、読取不能、通常ファイル以外の場合は0です。
+会話本文を読み直さずstatで取得するため、既存Piのextensionの再読込は不要です。
+この値はPCの会話ファイル更新時刻であり、PCでタブを見ただけの時刻ではありません。
+reloadなどによるメタデータの永続化でも更新されることがあります。
+Androidは同じPCとセッションに対する端末内の最終閲覧時刻との大きい方を並び替えに使います。
 
 `sessionKey` はそのherdrのpaneIdです。
 複数ホストでは、AndroidのprofileIdと合わせて識別します。

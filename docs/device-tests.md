@@ -25,6 +25,17 @@ cd /path/to/pi-mobile-bridge
 表示だけの回帰試験は `ThinkingUiTest` と `DisplaySettingsUiTest` を指定します。
 この2クラスはSSH接続先とfixtureを必要としません。
 
+## セッション一覧の並び替えの試験
+
+`SessionOrderingUiTest`はfixtureデータで、旧ボタンの不在、既存のチャット対象の維持、グループの有無、最近使った順、選択方式と閲覧時刻の保存を確認します。
+試験で変更した表示方式は元に戻します。
+
+`SessionOrderingDeviceTest`は `-e profileId <PCのID> -e pane <閲覧する既存Pi>` を指定して実行します。
+実際の会話を開いて一覧へ戻り、最終閲覧時刻の記録とグループなしの最近使った順を確認します。
+プロンプトの送信や/newの実行はしません。
+試験後は元の並び替え方式へ戻し、一覧画面にします。
+スクリーンショットは `files/recent-sessions.png`、本文を含まない比較情報は `files/session-order-proof.json` に保存します。
+
 ## 新しいタブの作成と表示の試験
 
 `NewSessionUiTest`はfixtureなしで「＋」、明示的な確認、作成先の選択、同じIDでの再確認、未接続時の抑止を試験します。

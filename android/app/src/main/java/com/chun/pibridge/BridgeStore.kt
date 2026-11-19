@@ -233,6 +233,11 @@ class BridgeStore private constructor(val context: Context) {
     }
 
     fun select(key: String) {
+        if (key.isNotEmpty()) {
+            mutable.value.sessions.find { it.optString("sessionKey") == key }?.let {
+                profiles.recordOpened(mutable.value.profileId, it)
+            }
+        }
         val old = mutable.value.selected
         mutable.value = mutable.value.copy(selected = key, terminal = "")
         scope.launch {

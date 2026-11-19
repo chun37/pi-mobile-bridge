@@ -147,6 +147,7 @@ func (r *relay) discover() {
 			for _, k := range []string{"sessionId", "sessionName", "cwd", "model", "lastEntryId", "lastResponse"} {
 				s[k] = b.info[k]
 			}
+			s["lastActivityAt"] = sessionActivity(b.info)
 		}
 		sessions[id] = s
 	}

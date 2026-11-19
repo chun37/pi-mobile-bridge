@@ -121,6 +121,19 @@ class Profiles(context: Context) {
         )
     }
 
+    var sessionSort: SessionSort
+        get() = runCatching {
+            SessionSort.valueOf(prefs.getString("sessionSort", "DEFAULT") ?: "DEFAULT")
+        }.getOrDefault(SessionSort.DEFAULT)
+        set(v) { check(prefs.edit().putString("sessionSort", v.name).commit()) }
+
+    fun lastOpened(profileId: String, session: JSONObject): Long =
+        prefs.getLong("opened:" + sessionUsageKey(profileId, session), 0L)
+
+    fun recordOpened(profileId: String, session: JSONObject, now: Long = System.currentTimeMillis()) {
+        check(prefs.edit().putLong("opened:" + sessionUsageKey(profileId, session), now).commit())
+    }
+
     var showThinking: Boolean
         get() = prefs.getBoolean("showThinking", true)
         set(v) {
