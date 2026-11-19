@@ -1,0 +1,162 @@
+# Pi Mobile Bridge
+
+AndroidからSSH経由で、herdr上の既存のPi TUIセッションを読み書きするアプリケーションです。
+PiをRPCモードへ置き換えず、PCのTUIとスマホが同じ会話を操作します。
+
+## 構成
+
+| パス | 役割 |
+|---|---|
+| `extension/index.ts` | Piプロセス内のUnix socket、履歴、入力、イベント配信 |
+| `relay/` | SSH execチャネルで動くGo製JSONL中継CLI |
+| `android/` | KotlinとJetpack ComposeによるAndroidアプリ |
+| `docs/verification.md` | 要件と検証証拠の対応 |
+
+実機の検証結果と未確認の受入条件は `docs/status.md` にあります。
+秘密鍵、認証情報、会話ログ、設計書の原本はGit対象外です。
+導入例と単体テストのIPアドレスは例示用です。実機テストの接続先は引数で指定してください。
+
+## PCへの導入
+
+Node.js 24以降、Go 1.24以降、Pi 1.5.2、herdr 0.9.5を前提にしています。
+今回の検証ではNode.js 26.8.1、Go 1.27.1を使用しました。
+
+```bash
+git clone https://github.com/chun37/pi-mobile-bridge.git
+cd pi-mobile-bridge
+npm ci --ignore-scripts
+./scripts/install-pc.sh
+```
+
+スクリプトはrelayをビルドし、`~/.local/bin/pibridge` と `~/.pi/agent/extensions/pi-bridge` を配置します。
+別の実行ファイルや拡張を見つけた場合は、上書きせず停止します。
+herdr公式のPi連携が未導入の場合だけ `herdr integration install pi` を実行します。
+
+既に起動しているPi TUIでは `/reload` を実行してください。
+新しいPi TUIには自動で読み込まれます。
+print、json、rpcモードではbridgeを開始しません。
+
+## Androidのビルドとインストール
+
+JDK 17とAndroid SDK 35を使用します。
+`android/local.properties` には環境に合わせた `sdk.dir` を設定してください。
+
+```bash
+cd android
+./gradlew :app:assembleDebug
+adb -s <serial> install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s <serial> shell am start -n com.chun.pibridge/.MainActivity
+```
+
+パッケージ名は `com.chun.pibridge` です。
+検証用APKはdebug署名です。
+Google Playへの配布やリリース署名の作成は、この作業では行いません。
+
+## 同じPCのLANとTailscaleを切り替える
+
+設定で1台のPCに複数の接続アドレスを登録できます。
+たとえば自宅LANの `192.168.1.100` とTailscaleのIPを追加し、画面上部の接続先メニューで切り替えます。
+同じPCの会話キャッシュとSSHホスト鍵を共有し、別のPCとして重複登録する必要はありません。
+通常は「自動（LAN優先）」でLANを先に試し、到達できない場合だけTailscaleへ切り替えます。
+TailscaleをOFFにしていても、LANで接続できればそのまま利用できます。
+接続先メニューでIPを手動指定することもできます。
+異なるホスト鍵が返る接続先は拒否し、鍵の不一致を他IPへの切り替えで隠しません。
+詳しい仕様と追加検証の状況は `docs/multiple-addresses.md` を参照してください。
+
+## 初回接続
+
+1. アプリの「設定」で接続先の表示名、ホスト名、SSHユーザー、ポートを保存します。
+2. 「端末のSSH公開鍵をコピー」を押します。
+3. PCの `authorized_keys` に、下記の制限を付けて公開鍵を登録します。
+4. アプリで接続し、表示されたホスト鍵をPC上の値と照合して保存します。
+5. 宅外ではTailscaleを先に接続します。
+
+```text
+command="/home/YOUR_USER/.local/bin/pibridge relay",no-port-forwarding,no-pty,no-agent-forwarding,no-X11-forwarding ssh-ed25519 AAAA... pibridge-android
+```
+
+ホスト鍵の比較元は、たとえば次のコマンドで取得できます。
+
+```bash
+ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+```
+
+ホスト鍵が変わるとアプリは接続を拒否します。
+同じPCの追加アドレスにも、保存済みのホスト鍵を要求します。
+別のPCへ設定を流用せず、新しいPCとして登録してください。
+秘密鍵は端末内で生成し、Android KeystoreのAES鍵を用いたAES-GCMで暗号化します。
+PCへ送るのは公開鍵だけです。
+生体認証は設定画面で有効にできます。
+
+## 操作
+
+セッション一覧はワークスペース別に表示します。
+bridgeがないペインはターミナルビューで開きます。
+チャットではPCからの入力に「PCから」ラベルが付き、Markdown、思考本文、ツールカード、添付画像を表示します。
+思考は設定画面の「思考を表示」で切り替え、オンなら見出しや開閉ボタンなしで薄い文字色で表示します。
+ツールは成功を緑、失敗を赤、実行中を中立色で示し、状態文字も併記します。
+空のメッセージや非表示のツール結果は、一覧に空白行を残しません。
+
+送信時は「次に送る」がfollowUp、「割り込む」がsteerです。
+実行中でなければ通常の入力として送ります。
+中断にはPiの `ctx.abort()` を使います。
+確認ダイアログにはターミナルビューのEnter、Esc、矢印、Ctrl+C、文字入力で応答できます。
+ターミナルのポーリングは、その画面を開いている間だけ1秒間隔で行います。
+
+画像はPhoto Pickerから選択します。
+一回の送信は最大4枚、各4MiBまでです。
+Pi自身の画像正規化によって、送信したPNGがJPEGなどへ変換されることがあります。
+変換後の画像も会話に残ることを実機で検証しています。
+
+切断時は1、2、4、8、16、32、60秒の間隔で再接続します。
+送信結果が不明なメッセージは自動再送しません。
+`clientMsgId` が同じ要求はbridge内で重複を抑止しますが、Piの再起動をまたぐexactly-once保証ではありません。
+
+## 設計からの調整
+
+Android 15以降のdataSync前景サービスには、1日あたり6時間の制限があります。
+1日利用という設計条件に対応するため、Android 14以降は端末間メッセージ継続用のremoteMessagingを使用し、Android 10〜13ではdataSyncを明示します。
+詳細と公式資料は `docs/verification.md` にあります。
+OEMの省電力制御やユーザーによる強制終了を無効化するものではありません。
+
+Markdownの描画には、Compose内のMarkwon TextViewを使用しています。
+設計書のMarkdownライブラリー名は候補として扱い、Android実機での描画と選択操作を優先しました。
+鍵の暗号化には、非推奨のEncryptedFileを使わず、Android KeystoreとAES-GCMを直接使用しています。
+
+## 自動試験
+
+```bash
+npm ci --ignore-scripts
+npm run typecheck
+npm test
+(cd relay && go test -race ./... && go vet ./...)
+(cd android && ./gradlew :app:testDebugUnitTest :app:lintDebug)
+```
+
+実機試験には、専用のPi TUIと `tests/model_fixture.py` を使います。
+fixtureはloopbackだけで待ち受ける決定的なOpenAI互換サーバーです。
+外部LLMへの課金や、既存のユーザー会話への試験入力を避けながら、本物のPi TUI、SSH、herdr、Android UIを通すためのものです。
+ツール実行の試験は、専用の `evidence/mobile-created.txt` だけを作成します。
+
+実機試験の再実行方法は `docs/device-tests.md` を参照してください。
+原本ログとスクリーンショットは、Git対象外の `evidence/` に保存しています。
+
+## 運用上の制限
+
+接続中だけ通知します。
+FCMなどの外部Pushは使いません。
+Androidがアプリを強制終了した場合は、アプリを開いて再接続してください。
+Roomのキャッシュはアプリ専用領域に置き、Androidバックアップを無効にしています。
+チャット自体は端末内に平文で保存されるため、端末の画面ロックと端末暗号化も必要です。
+
+relayはherdrの任意メソッドを転送しません。
+許可するのは一覧、購読、画面読取、キー入力、文字入力です。
+接続表示のmetadata更新はrelay内部で行い、外部RPCには公開しません。
+スマホ鍵を失効させる場合は、対応する公開鍵の行だけを `authorized_keys` から削除してください。
+既存のSSH鍵やPiセッションファイルを削除する必要はありません。
+
+## ライセンス
+
+[MIT License](LICENSE)。
+同梱のGradle Wrapperと外部依存ライブラリーには、それぞれのライセンスが適用されます。
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)を参照してください。

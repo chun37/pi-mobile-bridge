@@ -1,0 +1,12 @@
+{
+  "defaultProvider": "bridge-fixture",
+  "defaultModel": "bridge-fixture",
+  "defaultThinkingLevel": "off",
+  "defaultProjectTrust": "trusted",
+  "quietStartup": true,
+  "packages": [],
+  "extensions": [],
+  "skills": [],
+  "enableSkillCommands": false,
+  "lastChangelogVersion": "1.5.2"
+}

@@ -1,0 +1,157 @@
+# 実機検証結果
+
+## 思考本文の直接表示と空行の除去
+
+2026年11月19日の追加依頼により、チャット内の思考の開閉ボタンと「思考」の見出しを削除した。
+設定がオンなら思考本文を回答より薄いonSurfaceVariant色で直接表示し、オフなら表示しない。
+空文字、空白のみ、欠落、nullの思考は表示しない。
+
+非表示のツール結果や統合済みイベント、空メッセージがLazyColumnの行間だけを残していたため、表示対象を絞ってから一覧へ渡すようにした。
+元の履歴は維持し、自動スクロールには表示行のインデックスを使う。
+単体27件、lint、APK作成、実機UI8件が成功し、上書き導入した。
+実機では思考の直接表示と設定による非表示、ボタンと見出しの不在、非表示行を挟んだときの行間が通常の12dpだけであることを確認した。
+最終ログは `evidence/thinking-inline-20261119/device-test-spacing.log` にある。
+現在のAPKはPCと実機で次のSHA-256が一致した。
+
+```text
+e0140eab831faa44fe085af0291554076583af4fd190627265738d22e3723ded
+```
+
+以下は過去の導入時点の記録である。
+
+## 思考表示設定とツール結果の色分け
+
+2026年11月19日、設定画面に「思考を表示」スイッチを追加し、端末に保存するようにした。
+初期値はオンであり、オフでは思考の展開ボタンを非表示にする。
+モデルの思考量を切り替える設定ではない。
+ツールは成功を緑、失敗を赤、実行中を中立色で区別し、状態文字も併記する。
+確定したtoolResultかtool_execution_endを完了とし、部分結果を成功とは扱わない。
+単体22件、lint、APK作成、実機UI7件が成功し、上書き導入した。
+証拠は `evidence/display-settings-20261119/device-test-delivered.log` にある。
+この時点のAPKはPCと実機で次のSHA-256が一致した。
+
+```text
+40afedf6d1ed9ceea40b01f548ed246106553eac34eeb1f685eb96cb62623aea
+```
+
+以下のハッシュは過去の導入時点の記録である。
+
+## 空の思考ボタンの修正
+
+2026年11月19日、本文が空文字、空白のみ、欠落、nullの思考ブロックでは展開ボタンを表示しないように修正し、本人指定のワイヤレスADB接続先へ上書き導入した。
+本文がある思考の開閉と、ストリーミングで本文が到着した後の表示は維持する。
+単体22件、lint、APK作成が成功し、専用の実機UI試験3件も成功した。
+実機試験は実際の本文の表示と非表示も確認し、通常利用中のPiへ試験入力を送っていない。
+実機ログは `evidence/thinking-fix-20261119/device-test-final.log` にある。
+この修正の導入時点では、実機とPCのAPKでSHA-256が一致した。
+
+```text
+72056076d5e0cfa6fec7d5e263f6c765891daeaa928495dcbd24c5579823dfe8
+```
+
+以下のv0.2.0初回導入ハッシュは、この修正前の記録である。
+
+## 導入中のv0.2.0
+
+2026年11月19日にNX789Jへv0.2.0を上書きインストールした。
+同じPCへLANとTailscaleのアドレスを登録し、初期値を「自動（LAN優先）」とした。
+仕様と証拠の範囲は `multiple-addresses.md` に記載している。
+
+| 対象 | 結果 | 証拠 |
+|---|---|---|
+| 監視コード、extension、Go | それぞれ3件、10件、12件成功。Go raceとvet成功 | `evidence/ui-v2-delivery-check.log` と各checkログ |
+| Android unit、lint、APK作成 | 22件成功。lintと作成成功 | 同上、`evidence/android-check.log` |
+| 複数IPとUI、既存機能の実機回帰試験 | 10件成功 | `evidence/ui-v2-delivery-device.log` |
+| 鍵とSSH制限、両IPへの直接接続 | 4件成功 | `evidence/ui-v2-delivery-security-routes.log` |
+| LTEの自動切り替えと会話 | 1件成功。接続先100.89.78.71 | `evidence/ui-v2-cellular-final.log` |
+
+試験前後にCELLULARのVPN underlayを確認し、Wi-Fiを復帰した。
+試験用PiのペインとHTTPサーバーは終了し、通常利用用の `wV:pK` と既定モデルgpt-6.1-solは維持した。
+端末の保存済みPCは1台のままで、LANとTailscaleのアドレス、元のprofileId、ホスト鍵を保持している。
+
+v0.2.0初回導入時のAPKのSHA-256は次の値で、当時実機から取得したbase.apkと一致した。
+
+```text
+d596aad940155a97ede9ccd7ad628749662868989db761f72f45d2ca2ead73ad
+```
+
+証拠は `evidence/ui-v2-delivery.sha256` にある。
+設計の「外出先で1日使って困らない」は未確認であり、全体の受入完了とは判定していない。
+24時間監視と予約timerは停止したままで、再開していない。
+
+## v0.1.0の検証記録
+
+以下は旧版の機能試験の記録である。
+以下にあるAPKハッシュはv0.1.0のもので、現在導入中のAPKとは異なる。
+
+## 実装と機能試験
+
+PCのextension、relay、Androidアプリを実装し、ADBでNX789Jへインストールした。
+ユーザー提供の設計に対する要件表は `verification.md` にある。
+全体の完了判定は、設計の「外出先で1日使う」という受入条件だけを保留している。
+
+| 対象 | 結果 | 証拠 |
+|---|---|---|
+| 監視コードの単体試験 | 3件成功 | `evidence/soak-tests-check.log` |
+| TypeScript | 型検査成功 | `evidence/typecheck-check.log` |
+| extension | 10件成功 | `evidence/extension-tests-check.log` |
+| Go | 12件、raceとvet成功 | `evidence/relay-tests-check.log` |
+| Android単体 | 11件成功 | `android/app/build/test-results/testDebugUnitTest/` |
+| Android lintとAPK作成 | 成功 | `evidence/android-check.log` |
+| 最新APKでのUI、ライフサイクル、多重化、Photo Picker | 7件成功 | `evidence/device-release-candidate.log` |
+| 最新APKでの鍵保存、host pin、forced commandとPTY拒否 | 3件成功 | `evidence/device-security-final.log` |
+| 最新APKでのLTEとTailscaleを通す会話とツール実行 | 1件成功 | `evidence/device-cellular-final.log` |
+| bridgeなしの専用シェルでの読取と入力 | 先行する実機試験で1件成功 | `evidence/device-fallback.log` |
+| 導入済みCLI | helloとping成功 | `evidence/installed-cli-smoke.jsonl` |
+| 通常起動時の自動読込 | 実Pi TUIで成功 | `evidence/production-autoload-info.json` |
+
+LTE試験では、開始前と終了後のVPNのTransportsがCELLULAR|VPNであることを確認した。
+Wi-Fiを無効にしただけでLTE試験と判定していない。
+終了時にWi-Fiを元へ戻した。
+
+## 配置した成果物
+
+APKは `android/app/build/outputs/apk/debug/app-debug.apk`、SHA-256は次の値。
+
+```text
+3ee3d2c69eaf57c6b24e47f5eea4515543e59bca7419744f5493d81247335c90
+```
+
+実機に配置されたbase.apkのSHA-256と一致する。
+
+relayは `build/pibridge`、SHA-256は次の値。
+
+```text
+563d755aba0795bac8894ddf3273c8558e29266afd8a368c4d1e4f8d269c0d8f
+```
+
+`~/.local/bin/pibridge` と `~/.pi/agent/extensions/pi-bridge` に導入した。
+新しいPi TUIは自動読込し、既存のTUIには `/reload` が必要になる。
+
+## 通常利用用のセッション
+
+決定的な試験モデルのPiを終了し、ローカルのfixtureサーバーも終了した。
+同じ専用ペイン `wV:pK` で、通常の設定を使うPiを「モバイル操作用」という名前で起動している。
+モデルは既存の既定値であるgpt-6.1-solを使い、bridgeとherdr公式連携を自動読込した。
+検証のためにこの通常モデルへプロンプトを送っていないため、回答品質や契約上の利用可否を検証済みとはしていない。
+
+スマホのアプリからこのセッションを選んで利用できる。
+通常のPiの会話ファイルや他の作業ペインは変更していない。
+追加で作成した二つ目の試験ペインは閉じた。
+
+## 長時間試験の扱い
+
+24時間の監視は開始後に停止した。
+利用者がスマホを自由に使えることを優先し、USB接続の維持や操作禁止は要求しない。
+監視のserviceと予約timerは、ともにinactiveであることを確認した。
+短時間の観測を24時間成功として集計していない。
+
+長時間の監視は、利用者の合意なしに再開しない。
+設計の「外出先で1日使って困らない」は、通常利用の結果で判定する受入条件として残る。
+この未確認事項を除外して設計全体を完了とは判定していない。
+
+## 再確認
+
+自動試験は `./scripts/check.sh` で実行できる。
+実機試験は `device-tests.md` に記載した専用ペインの手順を使う。
+通常利用用の会話へ試験入力を送らない。

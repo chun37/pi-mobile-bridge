@@ -1,0 +1,18 @@
+android/.gradle/
+android/**/build/
+android/local.properties
+/pibridge
+/build/
+evidence/
+node_modules/
+*.sock
+__pycache__/
+*.pyc
+# Private design inputs; public documentation describes the implementation.
+/docs/design-source.txt
+/docs/design-architecture.png
+.env
+.env.*
+*.jks
+*.keystore
+*.pem
