@@ -33,12 +33,15 @@ func object(v any) obj {
 }
 func dial(socket string) (net.Conn, error) { return net.DialTimeout("unix", socket, 2*time.Second) }
 func rpc(socket, method string, params obj) (obj, error) {
+	return rpcWithTimeout(socket, method, params, 8*time.Second)
+}
+func rpcWithTimeout(socket, method string, params obj, timeout time.Duration) (obj, error) {
 	c, e := dial(socket)
 	if e != nil {
 		return nil, e
 	}
 	defer c.Close()
-	c.SetDeadline(time.Now().Add(8 * time.Second))
+	c.SetDeadline(time.Now().Add(timeout))
 	if e = json.NewEncoder(c).Encode(obj{"id": "relay", "method": method, "params": params}); e != nil {
 		return nil, e
 	}
@@ -139,7 +142,7 @@ func (r *relay) discover() {
 		p := object(v)
 		id := str(p["pane_id"])
 		b, ok := bridges[id]
-		s := obj{"sessionKey": id, "paneId": id, "workspace": ws[str(p["workspace_id"])], "tab": tabs[str(p["tab_id"])], "state": p["agent_status"], "agent": p["agent"], "bridge": ok, "cwd": p["cwd"]}
+		s := obj{"sessionKey": id, "paneId": id, "workspace": ws[str(p["workspace_id"])], "workspaceId": p["workspace_id"], "tabId": p["tab_id"], "tab": tabs[str(p["tab_id"])], "state": p["agent_status"], "agent": p["agent"], "bridge": ok, "cwd": p["cwd"]}
 		if ok {
 			for _, k := range []string{"sessionId", "sessionName", "cwd", "model", "lastEntryId", "lastResponse"} {
 				s[k] = b.info[k]
@@ -323,6 +326,10 @@ func (r *relay) handle(req obj) (any, error) {
 		return obj{"protocol": 1, "relayVersion": version, "herdrVersion": r.herdrVersion, "herdrProtocol": r.herdrProtocol, "bridgeVersion": version, "bridgeVersions": bridgeVersions}, nil
 	case "ping":
 		return obj{"pong": true}, nil
+	case "workspaces.list":
+		return r.listWorkspaces()
+	case "session.create":
+		return r.createSession(p)
 	case "sessions.list":
 		r.discover()
 		r.mu.Lock()

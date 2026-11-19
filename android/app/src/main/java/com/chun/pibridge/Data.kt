@@ -11,7 +11,28 @@ data class CacheRow(val host: String, val key: String, val json: String)
 
 @Dao
 interface CacheDao {
-    @Query("SELECT * FROM cache WHERE host = :host") suspend fun all(host: String): List<CacheRow>
+    @Query("SELECT `key` FROM cache WHERE host = :host")
+    suspend fun keys(host: String): List<String>
+
+    @Query("SELECT length(json) FROM cache WHERE host = :host AND `key` = :key")
+    suspend fun jsonLength(host: String, key: String): Int?
+
+    @Query("SELECT substr(json, :offset, :count) FROM cache WHERE host = :host AND `key` = :key")
+    suspend fun jsonChunk(host: String, key: String, offset: Int, count: Int): String?
+
+    // Read bounded SQLite cells, not a multi-megabyte row into CursorWindow.
+    // SQLite substr/length both count Unicode code points, preserving emoji too.
+    @Transaction
+    suspend fun all(host: String): List<CacheRow> = keys(host).map { key ->
+        val length = jsonLength(host, key) ?: error("Missing cache row")
+        val json = StringBuilder()
+        var offset = 1
+        while (offset <= length) {
+            json.append(jsonChunk(host, key, offset, 65536) ?: error("Missing cache chunk"))
+            offset += 65536
+        }
+        CacheRow(host, key, json.toString())
+    }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun put(row: CacheRow)
 }

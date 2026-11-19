@@ -290,7 +290,19 @@ fun BridgeApp() {
                     },
                 )
             }
-        else if (state.selected.isEmpty()) SessionList(store, state) else ChatScreen(store, state)
+        else if (state.selected.isEmpty()) {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                Column(Modifier.fillMaxSize()) { SessionList(store, state) }
+                NewSessionAction(
+                    connected = state.connected,
+                    loadWorkspaces = {
+                        store.request("workspaces.list").optJSONArray("workspaces").objects()
+                    },
+                    create = { workspace, requestId -> store.createSession(workspace, requestId) },
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
+                )
+            }
+        } else ChatScreen(store, state)
     }
 }
 
@@ -505,7 +517,7 @@ private fun ColumnScope.SessionList(store: BridgeStore, state: BridgeState) {
     else
         LazyColumn(
             Modifier.weight(1f).fillMaxWidth().testTag("sessions"),
-            contentPadding = PaddingValues(16.dp),
+            contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             filtered

@@ -24,7 +24,9 @@ relayは診断メッセージをstdoutへ混ぜません。
 |---|---|---|
 | `hello` | `protocol: 1` | バージョンとcapabilities |
 | `ping` | なし | `pong: true` |
-| `sessions.list` | なし | `sessions` 配列 |
+| `sessions.list` | なし | `sessions` 配列。各行に`workspaceId`と`tabId`を含む |
+| `workspaces.list` | なし | `workspaces` 配列。各要素は`id`と`label` |
+| `session.create` | `workspaceId`, UUID形式の`requestId` | `tabId`, `sessionKey`, `started`, 任意の`startupError` |
 | `session.open` | `sessionKey`, 任意の`since` | `info`, `entries`, `leafId`, `seq`, `reset` |
 | `session.close` | `sessionKey` | `closed: true` |
 | `session.send` | `sessionKey`, `text`, 任意の`images`, `deliverAs`, `clientMsgId` | `accepted`, `clientMsgId`, `status` |
@@ -50,6 +52,23 @@ textは最大1MiB、画像は最大4枚で、デコード後の各画像は4MiB�
 `accepted` は入力の受理であり、モデルやツールの処理完了ではありません。
 送信後のmessage_startで仮表示と対応づけ、agent_settledで完了を判断します。
 輸送途中で切れて結果が不明な要求を、Androidが自動で再送することはありません。
+
+## 新しいタブとセッションの作成
+
+`session.create`は指定したワークスペースにフォーカスを移さず新しいタブを作り、返されたroot paneだけでPiを起動します。
+既存セッションへの`/new`送信や、既存ペインの再利用はしません。
+クライアントから任意のコマンド、起動引数、環境変数、起動先paneを渡すことはできません。
+Piの起動はサーバーの`agent.start`に固定し、通常のPC側設定を使います。
+
+同じrequestIdの再確認では、端末の切断をまたいでも保存済みの結果を返し、タブや起動を重複させません。
+作成前に0700ディレクトリ内の0600ファイルへ要求を排他的に予約します。
+予約後の結果が不明な場合は`creation_pending`として停止し、自動再実行しません。
+別ワークスペースに同じIDを使うと`creation_request_conflict`になります。
+記録は`~/.pi/agent/bridge/creations/`に置きます。記録を削除すると、そのIDの再実行抑止も失われます。
+
+Piの起動が失敗または応答待ちでも、作成済みタブは勝手に閉じません。
+`startupError`を返し、Androidはその新しいタブをターミナル表示で確認できるようにします。
+Androidの作成要求は60秒、Piの起動待ちは20秒を上限とします。
 
 ## relayからAndroidへのイベント
 
@@ -85,7 +104,8 @@ relayはsocket以外のファイルや、現在のherdrSocketと一致しないb
 
 ## herdrの許可リスト
 
-relay内部で使うherdrメソッドはsnapshot、events.subscribe、pane.read、pane.send_keys、pane.send_input、pane.report_metadataです。
+relay内部で使うherdrメソッドはsession.snapshot、events.subscribe、pane.read、pane.send_keys、pane.send_input、pane.report_metadataです。
+新規セッション作成に限りtab.createとagent.startを使い、起動先は今作成したタブのroot pane、kindはpi、追加引数は空に固定します。
 pane.report_metadataはmobile接続の表示だけに使い、外部のRPCメソッドには公開しません。
 任意のherdrメソッド、server.stop、任意のシェル実行をAndroidへ公開しません。
 

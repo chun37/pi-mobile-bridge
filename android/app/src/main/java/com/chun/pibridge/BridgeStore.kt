@@ -203,6 +203,35 @@ class BridgeStore private constructor(val context: Context) {
         }
     }
 
+    suspend fun createSession(workspaceId: String, requestId: String) {
+        val c = client ?: error("未接続")
+        check(mutable.value.connected) { "PCに接続してください" }
+        val created = c.request(
+            "session.create",
+            JSONObject().put("workspaceId", workspaceId).put("requestId", requestId),
+            timeoutMs = 60000,
+        )
+        val pane = created.getString("sessionKey")
+        var found = false
+        for (attempt in 0 until 30) {
+            check(client === c && mutable.value.connected) {
+                "接続が変わりました。新しいタブの作成結果を再確認してください"
+            }
+            refresh()
+            val session = mutable.value.sessions.find { it.optString("sessionKey") == pane }
+            found = session != null
+            if (session?.optBoolean("bridge") == true ||
+                (found && !created.optBoolean("started"))) break
+            delay(500)
+        }
+        check(found) { "作成したタブが一覧にありません。PC側のタブを確認してください" }
+        select(pane)
+        if (created.has("startupError")) {
+            error(IllegalStateException("タブは作成済みです。Piの起動を確認してください: " +
+                created.optString("startupError")))
+        }
+    }
+
     fun select(key: String) {
         val old = mutable.value.selected
         mutable.value = mutable.value.copy(selected = key, terminal = "")

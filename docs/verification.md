@@ -31,7 +31,7 @@ herdrの型定義の原本は `evidence/herdr-schema.json`、公式連携の確�
 | C03 | 状態、cwd、名前、モデル、末尾ID | snapshotとbridge infoを結合。sessionName、model、lastEntryId、lastResponseを配信 |
 | C04 | 履歴と差分 | `getBranch()` のmessageをentryId付きで正規化。since既知と未知の双方を実機試験 |
 | C05 | ストリーミング | message_updateのcontentIndex別の差分を蓄積し、endで確定内容に置換。単体試験と実機受信を検証 |
-| C06 | Markdown、思考、ツール | Compose、Markwon、折りたたみ表示、ツールカード。実ツールのコマンドと出力を表示 |
+| C06 | Markdown、思考、ツール | Compose、Markwon、設定で切り替える薄い文字色の思考本文、成功と失敗を色分けするツールカード |
 | C07 | PC入力の識別 | inputのsourceと送信記録を照合し、originを履歴にも永続化。実機でPCラベルを試験 |
 | C08 | スマホの通常送信 | idle時のsendUserMessage。実機からツールを使って専用ファイルを作成 |
 | C09 | steerとfollowUp | 実行中に両方を送り、queued応答と、同じTUIでの順序付き処理を実機試験 |
@@ -41,6 +41,9 @@ herdrの型定義の原本は `evidence/herdr-schema.json`、公式連携の確�
 | C13 | 確認ダイアログ | Piの実confirmを開き、blocked、ターミナル表示、Enter応答を試験 |
 | C14 | キーバーと端末ポーリング | Enter、Esc、矢印、Ctrl+C、文字入力。画面表示中だけ1秒ポーリング |
 | C15 | 通知 | blocked遷移でAndroidの実通知を検証。sessions.changedとagent.stateの二重通知を抑止する回帰試験 |
+
+2026年11月20日の追加要件として、トップ右下の「＋」からワークスペースを選び、新しいタブを作ってPiを起動する機能を実装した。
+専用の実機試験で既存セッションを保持したまま、新規タブのbridgeとチャット入力欄まで確認した。
 
 ## プロトコルとライフサイクル
 
@@ -68,7 +71,7 @@ herdrの型定義の原本は `evidence/herdr-schema.json`、公式連携の確�
 | A03 | 公開鍵認証とexec | 実際のsshdに認証し、pibridge relayをexec。relayは切断で終了 |
 | A04 | ホスト鍵のpin | 未固定の鍵は明示照合待ち。異なるpinは接続拒否。双方を実機試験 |
 | A05 | SSH専用鍵の制限 | forced command、no-port-forwarding、no-pty、no-agent-forwarding、no-X11-forwardingを登録。別コマンドとPTYを実機試験 |
-| A06 | Roomとオフライン | 接続時のキャッシュ読込、履歴維持、接続先が到達不能でも既存会話を読む試験 |
+| A06 | Roomとオフライン | 接続時のキャッシュ読込、履歴維持、接続先が到達不能でも既存会話を読む試験。大きいJSONはSQLiteのsubstrで分割して読み、CursorWindow上限を回避 |
 | A07 | 自動再接続 | 実SSHを切断し、指数バックオフ後の再接続と差分同期を実機試験 |
 | A08 | 前景サービス | Android 14以降はremoteMessaging。dataSyncの6時間制限とは分離して検証 |
 | A09 | 複数マシンと設定 | プロファイルごとにhost、port、user、pin、Roomキャッシュを分離。接続先の編集時はpinを破棄 |

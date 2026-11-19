@@ -25,6 +25,19 @@ cd /path/to/pi-mobile-bridge
 表示だけの回帰試験は `ThinkingUiTest` と `DisplaySettingsUiTest` を指定します。
 この2クラスはSSH接続先とfixtureを必要としません。
 
+## 新しいタブの作成と表示の試験
+
+`NewSessionUiTest`はfixtureなしで「＋」、明示的な確認、作成先の選択、同じIDでの再確認、未接続時の抑止を試験します。
+`CacheDeviceTest`は実際の会話DBを変更せず、インメモリーDBで数MiBのキャッシュとUnicodeの分割読込を確認します。
+
+`NewSessionDeviceTest`は実際に新しいPiタブを1つ作り、起動とbridge接続、チャット表示までを確認します。
+モデルへのプロンプトは送りませんが、PCにPiプロセスとタブが作成される点に注意してください。
+明示的な `-e profileId <検証PCのID> -e workspaceId <作成先>` が必要です。
+通常の会話や既存タブはリセットしません。
+作成したtabIdとsessionKeyをアプリ専用領域の `files/new-session-proof.json` に記録します。
+終了時にアプリは一覧へ戻りますが、テストが作成したタブ自体は、証拠のIDを確認してから作業者が閉じます。
+IDを推測したり、他のタブをまとめて閉じたりしないでください。
+
 ## fixtureと専用Pi
 
 ```bash
