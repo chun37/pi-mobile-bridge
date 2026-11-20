@@ -2,6 +2,8 @@
 
 AndroidからSSH経由で、herdr上の既存のPi TUIセッションを読み書きするアプリケーションです。
 PiをRPCモードへ置き換えず、PCのTUIとスマホが同じ会話を操作します。
+アイコンはπを橋に見立てたSOFT案を採用しています。
+原本とAndroid用リソースの再生成方法は `design/icon-concepts/README.md` にあります。
 
 ## 構成
 

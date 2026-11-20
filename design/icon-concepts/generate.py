@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render editable SVG concepts and a comparison sheet. Not an installed app icon.
+"""Render the selected SOFT source and the alternative SHARP comparison.
 Requires system Python packages: PyGObject (Rsvg), Pillow.
 """
 from pathlib import Path
@@ -56,7 +56,7 @@ d.text((60, 82), "πを、橋に。", font=font(48), fill=NAVY)
 d.text((1040, 104), "NAVY / WHITE / MINT", font=en(20), fill="#52647C")
 
 for x, name, heading, subtitle in [
-    (56, "01-soft", "01  SOFT", "丸みのある、やわらかいπ"),
+    (56, "01-soft", "01  SOFT / SELECTED", "丸みのある、やわらかいπ"),
     (748, "02-sharp", "02  SHARP", "直線的な、端正なπ"),
 ]:
     d.rounded_rectangle((x, 180, x + 636, 1000), radius=32, fill="white")
@@ -79,6 +79,6 @@ for x, name, heading, subtitle in [
         d.text((x + dx, 935), label, font=en(18), fill="#52647C")
 
 d.text((64, 1040), "濃紺の背景 / 白いπ / ミントの接続点", font=font(21), fill="#52647C")
-d.text((1004, 1045), "CONCEPT ONLY / NOT INSTALLED", font=en(16), fill="#52647C")
+d.text((1004, 1045), "SOFT SELECTED / SHARP ALTERNATIVE", font=en(16), fill="#52647C")
 board.save(ROOT / "comparison.png")
 print("Created 2 SVGs, 2 transparent-corner PNGs, and comparison.png")

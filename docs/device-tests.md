@@ -25,6 +25,14 @@ cd /path/to/pi-mobile-bridge
 表示だけの回帰試験は `ThinkingUiTest` と `DisplaySettingsUiTest` を指定します。
 この2クラスはSSH接続先とfixtureを必要としません。
 
+## ランチャーアイコンの試験
+
+`LauncherIconDeviceTest`は実機のPackageManagerから導入済みアプリのアイコンを取得し、adaptive iconであること、白とミントの図形が描画されることを確認します。
+前景をadaptive iconの拡張領域へ描いたうえで、丸いマスクと角丸の正方形のマスクで図形が欠けないことを確認します。
+Android 13以降では単色レイヤーの存在も確認します。
+導入済みリソースから描いた画像を `files/soft-launcher-installed.png` へ保存します。
+利用者の壁紙や他のアプリを撮影する試験ではありません。
+
 ## ツール画像の表示と保存の試験
 
 `ImageUiTest`は、履歴のtoolResultと実行完了イベントの画像、折り畳んだツールカードでの表示、プレビュー、拡大率、元データの保存要求を確認します。
