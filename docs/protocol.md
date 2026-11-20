@@ -29,7 +29,8 @@ relayは診断メッセージをstdoutへ混ぜません。
 | `session.create` | `workspaceId`, UUID形式の`requestId` | `tabId`, `sessionKey`, `started`, 任意の`startupError` |
 | `session.open` | `sessionKey`, 任意の`since` | `info`, `entries`, `leafId`, `seq`, `reset` |
 | `session.close` | `sessionKey` | `closed: true` |
-| `session.send` | `sessionKey`, `text`, 任意の`images`, `deliverAs`, `clientMsgId` | `accepted`, `clientMsgId`, `status` |
+| `session.commands` | `sessionKey` | `commands`, `models`, `thinkingLevels` |
+| `session.send` | `sessionKey`, `text`, 任意の`images`, `deliverAs`, `clientMsgId`, `expectedSessionId` | `accepted`, `clientMsgId`, `status`, コマンドでは`message` |
 | `session.abort` | `sessionKey` | 中断要求の結果 |
 | `terminal.read` | `paneId`, 任意の`source` | herdrのpane.read結果 |
 | `terminal.input` | `paneId`, `text`, 任意の`keys` | herdrのpane.send_input結果 |
@@ -59,6 +60,39 @@ textは最大1MiB、画像は最大4枚で、デコード後の各画像は4MiB�
 `accepted` は入力の受理であり、モデルやツールの処理完了ではありません。
 送信後のmessage_startで仮表示と対応づけ、agent_settledで完了を判断します。
 輸送途中で切れて結果が不明な要求を、Androidが自動で再送することはありません。
+
+## コマンドとコンテキスト使用量
+
+対応するPi拡張はinfoのcapabilitiesに`slashCommands`と`contextUsage`を含めます。
+relayはこれらをsessions.listとsessions.changedにも転送します。
+infoのcontextUsageは`tokens`、`contextWindow`、`percent`を持ち、使用量不明の値はnullです。
+PiのgetContextUsage()を使い、Androidではpercentを小数1桁で表示します。
+モデル名が長い場合にも使用率の表示幅を確保します。
+
+session.commandsはPiのgetCommands()から名前、説明、sourceだけを取得します。
+sourceInfoなどにあるローカルパスは候補として転送しません。
+利用可能なモデルの候補も認証情報を含まない値だけに限定します。
+モデルやスキルの内容を取得するための外部APIは呼びません。
+
+先頭が`/`の送信は、対応するPi拡張でのみ受理します。
+古い拡張へスラッシュ文字列をそのまま通常プロンプトとして転送することはありません。
+登録済みの拡張コマンド、プロンプト、スキルはSDKのexpandPromptTemplatesを明示的に有効にして送信します。
+対応する組み込みコマンドはmodel、thinking、compact、name、session、reloadです。
+これらは公式SDKの操作を使い、PCの未送信エディターを上書きしたり、Enterを注入したりしません。
+newとその他の未対応コマンドはエラーで拒否します。
+実行中のPiと画像付きのコマンド送信も拒否します。
+
+コマンドのstatusはcommandです。
+messageは受理またはSDK操作の結果であり、拡張コマンドや圧縮処理の非同期完了までは保証しません。
+同じclientMsgIdは非同期操作の前に予約し、重複して実行しません。
+この記録は通常のsendと同じプロセス内の最大2048件であり、reloadやプロセス再起動をまたぐ保証ではありません。
+reloadは応答を書き込んだ後に内部の登録コマンドpibridge-reloadを通して行います。
+結果不明時の自動再送は行いません。
+Androidはコマンドを通常入力の仮メッセージにせず、入力欄の上に受理結果を表示します。
+
+expectedSessionIdが指定され、実行先の現在のセッションIDと異なる場合はsession_changedを返します。
+Androidは送信時の接続とPCを保持し、別PCへ切り替わっても遅延送信を移し替えません。
+候補の取得結果もPC、セッション、選択先、再読込の世代を確認してから反映します。
 
 ## 新しいタブとセッションの作成
 

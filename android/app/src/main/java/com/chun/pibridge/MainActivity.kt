@@ -997,13 +997,17 @@ fun ColumnScope.ChatScreen(store: BridgeStore, state: BridgeState) {
     val session = state.sessions.find { it.optString("sessionKey") == key }
     val chat = state.chats[key] ?: Conversation()
     var terminal by remember(key) { mutableStateOf(session?.optBoolean("bridge") != true) }
-    var text by remember(key) { mutableStateOf("") }
+    var text by remember(key) { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue("")) }
+    var terminalText by remember(key) { mutableStateOf("") }
     var delivery by remember { mutableStateOf("followUp") }
     var images by remember(key) { mutableStateOf(emptyList<JSONObject>()) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
     val working = chat.state == "working" || session?.optString("state") == "working"
+    LaunchedEffect(key, state.connected, session?.optString("sessionId"), supportsSlash(session), text.text.startsWith("/"), state.slashCatalog) {
+        if (state.connected && text.text.startsWith("/") && state.slashCatalog == null) store.refreshCommands(key)
+    }
     val picker =
         rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
             if (uri != null)
@@ -1074,12 +1078,7 @@ fun ColumnScope.ChatScreen(store: BridgeStore, state: BridgeState) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                session?.optString("model")?.ifBlank { "同じPCセッション" } ?: "同じPCセッション",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
+            ModelContextLabel(session)
         }
         TextButton(onClick = { terminal = !terminal }) {
             Icon(
@@ -1132,19 +1131,19 @@ fun ColumnScope.ChatScreen(store: BridgeStore, state: BridgeState) {
                 }
         }
         OutlinedTextField(
-            text,
-            { text = it },
+            terminalText,
+            { terminalText = it },
             Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("terminalInput"),
             placeholder = { Text("ターミナルへの入力") },
             shape = RoundedCornerShape(12.dp),
         )
         Button(
             onClick = {
-                store.terminalInput(key, text)
-                text = ""
+                store.terminalInput(key, terminalText)
+                terminalText = ""
                 keyboard?.hide()
             },
-            enabled = state.connected && text.isNotEmpty(),
+            enabled = state.connected && terminalText.isNotEmpty(),
             modifier = Modifier.fillMaxWidth().padding(16.dp),
         ) {
             Text("Enter付きで入力")
@@ -1238,6 +1237,13 @@ fun ColumnScope.ChatScreen(store: BridgeStore, state: BridgeState) {
                         )
                         TextButton(onClick = { images = emptyList() }) { Text("添付解除") }
                     }
+                if (state.commandNotice.isNotBlank()) Text(state.commandNotice,
+                    style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("commandNotice"))
+                SlashSuggestions(text, state.slashCatalog, state.slashLoading, state.slashError) {
+                    text = completeSlash(text, it)
+                }
+                if (working && text.text.startsWith("/")) Text("実行の完了後にコマンドを送信できます",
+                    style = MaterialTheme.typography.bodySmall)
                 Row(
                     verticalAlignment = Alignment.Bottom,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1264,12 +1270,14 @@ fun ColumnScope.ChatScreen(store: BridgeStore, state: BridgeState) {
                     )
                     FilledIconButton(
                         onClick = {
-                            store.send(key, text, images, delivery)
-                            text = ""
-                            images = emptyList()
-                            keyboard?.hide()
+                            if (store.send(key, text.text, images, delivery)) {
+                                text = androidx.compose.ui.text.input.TextFieldValue("")
+                                images = emptyList()
+                                keyboard?.hide()
+                            }
                         },
-                        enabled = state.connected && (text.isNotBlank() || images.isNotEmpty()),
+                        enabled = state.connected && (text.text.isNotBlank() || images.isNotEmpty()) &&
+                            (!text.text.startsWith("/") || (!working && images.isEmpty() && supportsSlash(session))),
                         modifier = Modifier.size(52.dp).testTag("send"),
                     ) {
                         Icon(Icons.Default.Send, "送信")

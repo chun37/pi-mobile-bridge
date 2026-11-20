@@ -96,6 +96,35 @@ DBを消したりスキーマを変更したりしません。
 終了時にアプリは一覧へ戻りますが、テストが作成したタブ自体は、証拠のIDを確認してから作業者が閉じます。
 IDを推測したり、他のタブをまとめて閉じたりしないでください。
 
+## スラッシュコマンドと使用率の試験
+
+`SlashCommandsUiTest`は通信を使わず、入力欄の上の候補、前方一致、タップによる入力補完、モデル引数の補完、長いモデル名と使用率、unknown表示、reload案内を確認する。
+実機が消灯してsecure keyguardでロックされている場合は試験を開始せず、利用者へ解除を依頼する。
+`am instrument`の終了コードではなく、ログ内の`OK`と失敗の有無を確認する。
+
+`SlashCommandsDeviceTest`は通常会話では実行しない。
+次節の専用Piの起動引数へ`-e "$PWD/tests/slash-observer.ts"`を追加し、名前を`--name bridge-slash-verification`とする。
+この専用Piでのみ、ローカルモデルへ短いfixture入力を一度送って使用率と履歴を用意する。
+実機テストにはPCのprofileIdと専用のfixturePane、その現在のfixtureSessionIdを明示する。
+テストはモデルがbridge-fixtureであり、セッション名とIDが一致することを確認してから操作する。
+登録コマンドの補完と実行による名前変更、model引数の補完とSDK操作、通常のuser messageが増えないことを確認する。
+通常会話や省略時のペインへフォールバックしない。
+
+```bash
+adb -s "$SERIAL" shell am instrument -w -r \
+  -e class com.chun.pibridge.SlashCommandsUiTest \
+  com.chun.pibridge.test/androidx.test.runner.AndroidJUnitRunner
+adb -s "$SERIAL" shell am instrument -w -r \
+  -e class com.chun.pibridge.SlashCommandsDeviceTest \
+  -e profileId "$PROFILE_ID" -e fixturePane "$FIXTURE_PANE" \
+  -e fixtureSessionId "$FIXTURE_SESSION_ID" \
+  com.chun.pibridge.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+`tests/slash-observer.ts`は試験用であり、通常のPiへ導入しない。
+専用のBRIDGE_TEST_ROOTへ引数とセッションIDだけを記録し、固定した試験用のセッション名へ変更する。
+試験後は作成した専用fixtureだけを停止する。
+
 ## fixtureと専用Pi
 
 ```bash

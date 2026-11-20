@@ -144,7 +144,7 @@ func (r *relay) discover() {
 		b, ok := bridges[id]
 		s := obj{"sessionKey": id, "paneId": id, "workspace": ws[str(p["workspace_id"])], "workspaceId": p["workspace_id"], "tabId": p["tab_id"], "tab": tabs[str(p["tab_id"])], "state": p["agent_status"], "agent": p["agent"], "bridge": ok, "cwd": p["cwd"]}
 		if ok {
-			for _, k := range []string{"sessionId", "sessionName", "cwd", "model", "lastEntryId", "lastResponse"} {
+			for _, k := range []string{"sessionId", "sessionName", "cwd", "model", "lastEntryId", "lastResponse", "contextUsage", "capabilities"} {
 				s[k] = b.info[k]
 			}
 			s["lastActivityAt"] = sessionActivity(b.info)
@@ -354,10 +354,27 @@ func (r *relay) handle(req obj) (any, error) {
 		}
 		r.mu.Unlock()
 		return obj{"closed": true}, nil
+	case "session.commands":
+		b, e := r.get(key)
+		if e != nil {
+			return nil, e
+		}
+		return rpc(b.socket, "commands", obj{})
 	case "session.send":
 		b, e := r.get(key)
 		if e != nil {
 			return nil, e
+		}
+		if strings.HasPrefix(str(p["text"]), "/") {
+			supported := false
+			for _, capability := range array(b.info["capabilities"]) {
+				if str(capability) == "slashCommands" {
+					supported = true
+				}
+			}
+			if !supported {
+				return nil, errors.New("slash_commands_require_pi_reload")
+			}
 		}
 		return rpc(b.socket, "send", p)
 	case "session.abort":

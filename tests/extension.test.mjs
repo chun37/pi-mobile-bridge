@@ -17,6 +17,8 @@ let sent = [];
 const dir = path.join(os.homedir(), ".pi/agent/bridge");
 const socket = path.join(dir, `${process.pid}.sock`);
 const pi = {
+  registerCommand: () => {},
+  getCommands: () => [{ name: "fixture", description: "Local extension", source: "extension" }],
   on: (n, f) => {
     if (!handlers.has(n)) handlers.set(n, []);
     handlers.get(n).push(f);
@@ -37,6 +39,8 @@ const ctx = {
   cwd: "/test",
   model: { id: "test-model" },
   isIdle: () => idle,
+  getContextUsage: () => ({ tokens: 12345, contextWindow: 100000, percent: 12.345 }),
+  modelRegistry: { getAvailable: () => [{ id: "test-model", provider: "fixture", name: "Test", contextWindow: 100000 }] },
   abort: () => {
     aborts++;
   },
@@ -97,6 +101,8 @@ test("secure socket and metadata", async () => {
   const p = await req("info");
   assert.equal(p.result.sessionId, "test-session");
   assert.equal(p.result.model, "test-model");
+  assert.equal(p.result.contextUsage.percent, 12.345);
+  assert.ok(p.result.capabilities.includes("slashCommands"));
 });
 test("history excludes system and handles unknown cursor", async () => {
   entries.push(
@@ -214,6 +220,35 @@ test("LF parser keeps unicode separators and fragmented UTF8", () => {
   parser(Buffer.from("{bad}\n"));
   assert.equal(errors, 1);
 });
+test("command catalog and slash dispatch never turn unknown commands into prompts", async () => {
+  const catalog = (await req("commands")).result;
+  assert.ok(catalog.commands.some(c => c.name === "fixture"));
+  assert.ok(catalog.commands.some(c => c.name === "compact"));
+  assert.ok(!catalog.commands.some(c => c.name === "new"));
+  assert.equal(catalog.models[0].value, "fixture/test-model");
+  const before = sent.length;
+  let p = await req("send", { text: "/fixture 日本語", clientMsgId: "command-one" });
+  assert.equal(p.result.status, "command");
+  assert.equal(sent.length, before + 1);
+  assert.deepEqual(sent.at(-1), { content: "/fixture 日本語", opts: { expandPromptTemplates: true } });
+  p = await req("send", { text: "/fixture 日本語", clientMsgId: "command-one" });
+  assert.equal(p.result.status, "command");
+  assert.equal(sent.length, before + 1);
+  p = await req("send", { text: "/does-not-exist", clientMsgId: "command-unknown" });
+  assert.ok(p.error);
+  p = await req("send", { text: "/new", clientMsgId: "command-new" });
+  assert.match(p.error.message, /別タブ/);
+  p = await req("send", { text: "/fixture", images: [{ mimeType: "image/png", data: "AA==" }], clientMsgId: "command-image" });
+  assert.ok(p.error);
+  idle = false;
+  p = await req("send", { text: "/fixture", clientMsgId: "command-busy" });
+  assert.ok(p.error);
+  idle = true;
+  p = await req("send", { text: "/fixture", expectedSessionId: "other-session", clientMsgId: "command-other" });
+  assert.match(p.error.message, /session_changed/);
+  assert.equal(sent.length, before + 1);
+});
+
 test("shutdown and reload are idempotent; non-TUI has no socket", async () => {
   await emit("session_shutdown");
   await emit("session_shutdown");

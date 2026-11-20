@@ -9,7 +9,9 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 
-export const VERSION = "0.1.0";
+import { commandCatalog, contextUsage, modelCatalog, RELOAD_COMMAND, runSlashCommand, THINKING_LEVELS } from "./commands.ts";
+
+export const VERSION = "0.2.0";
 export const MAX_FRAME = 24 * 1024 * 1024;
 type WireEntry = {
   entryId: string;
@@ -50,6 +52,10 @@ export function parseLines(
 }
 
 export default function bridge(pi: ExtensionAPI) {
+  pi.registerCommand(RELOAD_COMMAND, {
+    description: "Reload this Pi runtime for the mobile bridge",
+    handler: async (_args, commandContext) => { await commandContext.reload(); },
+  });
   let ctx: ExtensionContext | undefined;
   let server: net.Server | undefined;
   let socketPath: string | undefined;
@@ -108,6 +114,8 @@ export default function bridge(pi: ExtensionAPI) {
       sessionName: sm.getSessionName(),
       cwd: ctx!.cwd,
       model: ctx!.model?.id,
+      contextUsage: contextUsage(ctx!),
+      capabilities: ["slashCommands", "contextUsage"],
       idle: ctx!.isIdle(),
       lastEntryId: sm.getLeafId(),
       lastResponse,
@@ -177,6 +185,9 @@ export default function bridge(pi: ExtensionAPI) {
         case "info":
           result = info();
           break;
+        case "commands":
+          result = { commands: commandCatalog(pi), models: modelCatalog(ctx), thinkingLevels: THINKING_LEVELS };
+          break;
         case "history":
           result = history(p.since);
           break;
@@ -189,6 +200,8 @@ export default function bridge(pi: ExtensionAPI) {
           result = { aborted: true };
           break;
         case "send": {
+          if (p.expectedSessionId != null && p.expectedSessionId !== ctx.sessionManager.getSessionId())
+            throw new Error("session_changed");
           if (typeof p.text !== "string" || p.text.length > 1000000)
             throw new Error("invalid_text");
           if (
@@ -224,6 +237,19 @@ export default function bridge(pi: ExtensionAPI) {
             break;
           }
           const idle = ctx.isIdle();
+          if (p.text.startsWith("/")) {
+            if (images.length) throw new Error("コマンドに画像は添付できません");
+            if (!idle) throw new Error("コマンドは実行が完了してから送信してください");
+            // Reserve before any asynchronous model change or command dispatch.
+            accepted.set(p.clientMsgId, { fingerprint, result: {
+              status: "command", clientMsgId: p.clientMsgId,
+              message: "前回のコマンド処理結果は未確認です。自動では再実行しません",
+            } });
+            if (accepted.size > 2048) accepted.delete(accepted.keys().next().value!);
+            result = { accepted: true, ...await runSlashCommand(pi, ctx, p.text), clientMsgId: p.clientMsgId };
+            accepted.set(p.clientMsgId, { fingerprint, result });
+            break;
+          }
           if (pending.length >= 2048) throw new Error("input_queue_full");
           const marker = {
             text: p.text,

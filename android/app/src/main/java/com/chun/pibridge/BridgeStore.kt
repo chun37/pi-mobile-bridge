@@ -20,6 +20,10 @@ data class BridgeState(
     val terminal: String = "",
     val error: String = "",
     val offeredPin: String = "",
+    val slashCatalog: JSONObject? = null,
+    val slashLoading: Boolean = false,
+    val slashError: String = "",
+    val commandNotice: String = "",
 )
 
 class BridgeStore private constructor(val context: Context) {
@@ -30,6 +34,7 @@ class BridgeStore private constructor(val context: Context) {
     private val mutable = MutableStateFlow(BridgeState())
     val state: StateFlow<BridgeState> = mutable
     private var client: BridgeClient? = null
+    private var commandGeneration = 0L
     private var connection: Job? = null
     private val cacheJobs = mutableMapOf<String, Job>()
     private val transitions = StateTransitions()
@@ -276,13 +281,18 @@ class BridgeStore private constructor(val context: Context) {
             }
         }
         val old = mutable.value.selected
-        mutable.value = mutable.value.copy(selected = key, terminal = "")
+        commandGeneration++
+        mutable.value = mutable.value.copy(selected = key, terminal = "", slashCatalog = null,
+            slashLoading = false, slashError = "", commandNotice = "")
         scope.launch {
             runCatching {
                     if (key.isNotEmpty()) loadCachedChat(key)
                     if (old.isNotEmpty() && old != key && mutable.value.connected)
                         request("session.close", JSONObject().put("sessionKey", old))
-                    if (mutable.value.connected) open(key)
+                    if (mutable.value.connected) {
+                        open(key)
+                        if (key.isNotEmpty()) refreshCommands(key)
+                    }
                 }
                 .onFailure { error(it) }
         }
@@ -303,6 +313,10 @@ class BridgeStore private constructor(val context: Context) {
     }
 
     suspend fun open(key: String, full: Boolean = false) {
+        if (full && mutable.value.selected == key) {
+            commandGeneration++
+            mutable.value = mutable.value.copy(slashCatalog = null, slashLoading = false, slashError = "")
+        }
         val activeClient = client ?: return
         val profile = mutable.value.profileId
         loadCachedChat(key)
@@ -390,22 +404,72 @@ class BridgeStore private constructor(val context: Context) {
         }
     }
 
-    fun send(key: String, text: String, images: List<JSONObject>, delivery: String) {
+    fun refreshCommands(key: String) {
+        val activeClient = client ?: return
+        val profile = mutable.value.profileId
+        val generation = commandGeneration
+        val session = mutable.value.sessions.find { it.optString("sessionKey") == key }
+        val sessionId = session?.optString("sessionId")
+        fun current() = commandGeneration == generation && client === activeClient && mutable.value.profileId == profile &&
+            mutable.value.selected == key && mutable.value.sessions.find {
+                it.optString("sessionKey") == key }?.optString("sessionId") == sessionId
+        if (!current() || mutable.value.slashLoading) return
+        if (!supportsSlash(session)) {
+            mutable.value = mutable.value.copy(slashError = "PCのこのPiで /reload を1回実行してください")
+            return
+        }
+        mutable.value = mutable.value.copy(slashLoading = true, slashError = "")
+        scope.launch {
+            try {
+                val catalog = activeClient.request("session.commands", JSONObject().put("sessionKey", key))
+                if (current()) mutable.value = mutable.value.copy(slashCatalog = catalog, slashLoading = false)
+            } catch (e: CancellationException) { throw e
+            } catch (_: Exception) {
+                if (current()) mutable.value = mutable.value.copy(slashLoading = false,
+                    slashError = "候補を取得できません。再接続して再試行してください")
+            }
+        }
+    }
+
+    fun send(key: String, text: String, images: List<JSONObject>, delivery: String): Boolean {
+        val sendingClient = client ?: return false
+        val sendingProfile = mutable.value.profileId
+        val session = mutable.value.sessions.find { it.optString("sessionKey") == key }
+        val command = text.startsWith("/")
+        if (command) {
+            val reason = when {
+                !supportsSlash(session) -> "PCのこのPiで /reload を1回実行してください"
+                images.isNotEmpty() -> "コマンドに画像は添付できません"
+                mutable.value.chats[key]?.state == "working" || session?.optString("state") == "working" ->
+                    "コマンドは実行が完了してから送信してください"
+                else -> null
+            }
+            if (reason != null) { error(IllegalStateException(reason)); return false }
+        }
         val id = UUID.randomUUID().toString()
         val old = mutable.value.chats[key] ?: Conversation()
         val draft = JSONObject().put("clientMsgId", id).put("text", text).put("status", "送信中")
-        updateChat(key, old.copy(pending = old.pending + draft))
+        if (!command) updateChat(key, old.copy(pending = old.pending + draft))
+        else mutable.value = mutable.value.copy(commandNotice = "コマンドを送信中…")
         scope.launch {
             try {
-                request(
+                val response = sendingClient.request(
                     "session.send",
                     JSONObject()
                         .put("sessionKey", key)
                         .put("text", text)
                         .put("images", JSONArray(images))
                         .put("deliverAs", delivery)
-                        .put("clientMsgId", id),
+                        .put("clientMsgId", id)
+                        .put("expectedSessionId", session?.opt("sessionId") as? String),
                 )
+                if (client !== sendingClient || mutable.value.profileId != sendingProfile) return@launch
+                if (command) {
+                    if (mutable.value.selected == key) mutable.value = mutable.value.copy(
+                        commandNotice = response.optString("message", "コマンドを受け付けました"))
+                    refresh()
+                    return@launch
+                }
                 val now = mutable.value.chats[key] ?: old
                 updateChat(
                     key,
@@ -418,8 +482,15 @@ class BridgeStore private constructor(val context: Context) {
                             }
                     ),
                 )
+            } catch (e: CancellationException) { throw e
             } catch (e: Exception) {
+                if (client !== sendingClient || mutable.value.profileId != sendingProfile) return@launch
                 error(e)
+                if (command) {
+                    if (mutable.value.selected == key) mutable.value = mutable.value.copy(
+                        commandNotice = "コマンドの完了を確認できません。自動では再送しません")
+                    return@launch
+                }
                 val now = mutable.value.chats[key] ?: old
                 updateChat(
                     key,
@@ -434,6 +505,7 @@ class BridgeStore private constructor(val context: Context) {
                 )
             }
         }
+        return true
     }
 
     fun abort(key: String) {
