@@ -14,24 +14,27 @@ interface CacheDao {
     @Query("SELECT `key` FROM cache WHERE host = :host")
     suspend fun keys(host: String): List<String>
 
-    @Query("SELECT length(json) FROM cache WHERE host = :host AND `key` = :key")
+    @Query("SELECT length(CAST(json AS BLOB)) FROM cache WHERE host = :host AND `key` = :key")
     suspend fun jsonLength(host: String, key: String): Int?
 
-    @Query("SELECT substr(json, :offset, :count) FROM cache WHERE host = :host AND `key` = :key")
-    suspend fun jsonChunk(host: String, key: String, offset: Int, count: Int): String?
+    @Query("SELECT substr(CAST(json AS BLOB), :offset, :count) FROM cache WHERE host = :host AND `key` = :key")
+    suspend fun jsonChunk(host: String, key: String, offset: Int, count: Int): ByteArray?
 
-    // Read bounded SQLite cells, not a multi-megabyte row into CursorWindow.
-    // SQLite substr/length both count Unicode code points, preserving emoji too.
+    // Bound CursorWindow cells and avoid repeatedly scanning UTF-8 code points.
+    // Join byte chunks before decoding, preserving characters split across chunks.
     @Transaction
-    suspend fun all(host: String): List<CacheRow> = keys(host).map { key ->
-        val length = jsonLength(host, key) ?: error("Missing cache row")
-        val json = StringBuilder()
+    suspend fun all(host: String): List<CacheRow> = keys(host).mapNotNull { key -> row(host, key) }
+
+    @Transaction
+    suspend fun row(host: String, key: String): CacheRow? {
+        val length = jsonLength(host, key) ?: return null
+        val json = java.io.ByteArrayOutputStream()
         var offset = 1
         while (offset <= length) {
-            json.append(jsonChunk(host, key, offset, 65536) ?: error("Missing cache chunk"))
-            offset += 65536
+            json.write(jsonChunk(host, key, offset, 262144) ?: error("Missing cache chunk"))
+            offset += 262144
         }
-        CacheRow(host, key, json.toString())
+        return CacheRow(host, key, json.toString(Charsets.UTF_8.name()))
     }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun put(row: CacheRow)
@@ -120,6 +123,14 @@ class Profiles(context: Context) {
                 .commit()
         )
     }
+
+    var autoConnect: Boolean
+        get() = prefs.getBoolean("autoConnect", true)
+        set(v) { check(prefs.edit().putBoolean("autoConnect", v).commit()) }
+
+    var lastProfileId: String
+        get() = prefs.getString("lastProfileId", "").orEmpty()
+        set(v) { check(prefs.edit().putString("lastProfileId", v).commit()) }
 
     var sessionSort: SessionSort
         get() = runCatching {

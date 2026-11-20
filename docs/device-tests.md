@@ -25,6 +25,25 @@ cd /path/to/pi-mobile-bridge
 表示だけの回帰試験は `ThinkingUiTest` と `DisplaySettingsUiTest` を指定します。
 この2クラスはSSH接続先とfixtureを必要としません。
 
+## 起動時の接続とキャッシュの試験
+
+`AutoConnectUiTest`は設定スイッチの操作と永続化を確認し、試験後に元の設定へ戻します。
+`AutoConnectDeviceTest`は、自動接続が有効で保存済みの信頼済みPCがある新しいアプリプロセスで実行します。
+接続ボタンを押さずに接続と一覧取得が終わること、同じService開始要求で接続し直さないこと、手動切断後のActivity再作成で再接続しないことを確認します。
+この試験は最後に手動切断するため、引き渡し前にアプリを開き直してください。
+
+`ConnectionSpeedDeviceTest`は `-e profileId <保存済みPC>` を指定し、2回接続して段階別の経過時間を `files/connection-speed.json` に保存します。
+会話への入力は行いません。
+`ConnectionTrace`はアドレス、鍵、会話本文を記録せず、段階名と経過時間だけを保持します。
+
+`OfflineLazyCacheDeviceTest`は専用IDのキャッシュと到達しないlocalhostポートを使い、一覧だけが最初に読み込まれ、オフラインでも選択時に会話を読めることを確認します。
+`CacheDeviceTest`は巨大な会話、日本語、絵文字、空文字、欠落行、一覧だけの読込を確認します。
+キャッシュは256KiBのバイト列に分割して読み、結合後にUTF-8として解釈します。
+DBを消したりスキーマを変更したりしません。
+
+画面試験は端末がロック中やDozingだとComposeの画面を取得できず、失敗または停止します。
+その場合は本人にロック解除を依頼し、生体認証やPINを代行しません。
+
 ## セッション一覧の並び替えの試験
 
 `SessionOrderingUiTest`はfixtureデータで、旧ボタンの不在、既存のチャット対象の維持、グループの有無、最近使った順、選択方式と閲覧時刻の保存を確認します。

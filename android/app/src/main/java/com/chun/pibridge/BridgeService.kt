@@ -73,7 +73,9 @@ class BridgeService : Service() {
             return START_NOT_STICKY
         }
         val id = intent?.getStringExtra("profileId")
-        store.profiles.all().find { it.id == id }?.let { store.connect(it) }
+        store.profiles.all().find { it.id == id }?.let {
+            if (!store.isConnectingTo(it)) store.connect(it)
+        }
         return START_NOT_STICKY
     }
 

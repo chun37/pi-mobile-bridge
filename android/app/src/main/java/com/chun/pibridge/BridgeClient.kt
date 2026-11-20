@@ -15,7 +15,7 @@ class UntrustedHost(val fingerprint: String) : Exception("ホスト鍵の確認�
 
 class HostKeyChanged : Exception("ホスト鍵が変更されています。接続を拒否しました")
 
-class BridgeClient {
+class BridgeClient(private val trace: (String) -> Unit = {}) {
     init {
         // Android's truncated provider also uses the name BC, but lacks X25519.
         synchronized(BridgeClient::class.java) {
@@ -73,6 +73,7 @@ class BridgeClient {
             )
             try {
                 client.connect(profile.host, profile.port)
+                trace("ssh_handshake")
             } catch (e: Exception) {
                 client.close()
                 if (changed) throw HostKeyChanged()
@@ -102,8 +103,10 @@ class BridgeClient {
                 profile.user,
                 net.schmizz.sshj.userauth.keyprovider.KeyPairWrapper(publicKey, privateKey),
             )
+            trace("ssh_auth")
             client.connection.keepAlive.keepAliveInterval = 30
             val command = client.startSession().exec("pibridge relay")
+            trace("ssh_exec")
             channel = command
             writer = OutputStreamWriter(command.outputStream, Charsets.UTF_8)
             // Drain stderr separately so an error cannot block stdout. Never copy remote

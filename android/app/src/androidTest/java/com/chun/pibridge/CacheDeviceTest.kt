@@ -27,6 +27,18 @@ class CacheDeviceTest {
     }
 
     @Test
+    fun sessionIndexCanBeLoadedWithoutReadingOtherConversations() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val db = Room.inMemoryDatabaseBuilder(context, CacheDb::class.java).build()
+        try {
+            db.cache().put(CacheRow("test", "large", "x".repeat(4 * 1024 * 1024)))
+            db.cache().put(CacheRow("test", "sessions", "[]"))
+            assertEquals("[]", db.cache().row("test", "sessions")?.json)
+            assertNull(db.cache().row("test", "missing"))
+        } finally { db.close() }
+    }
+
+    @Test
     fun emptyCacheAndEmptyStringArePreserved() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val db = Room.inMemoryDatabaseBuilder(context, CacheDb::class.java).build()

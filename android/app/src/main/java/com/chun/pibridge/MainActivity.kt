@@ -151,7 +151,9 @@ fun BridgeApp() {
     val store = remember { BridgeStore.get(context) }
     val state by store.state.collectAsState()
     var profiles by remember { mutableStateOf(store.profiles.all()) }
-    var chosen by remember { mutableStateOf(profiles.firstOrNull()?.id ?: "") }
+    var chosen by remember {
+        mutableStateOf(startupProfile(profiles, store.profiles.lastProfileId)?.id ?: "")
+    }
     var settings by remember { mutableStateOf(profiles.isEmpty()) }
     val active =
         profiles.find { it.id == (state.profileId.ifEmpty { chosen }) }
@@ -164,6 +166,7 @@ fun BridgeApp() {
             Intent(context, BridgeService::class.java).putExtra("profileId", p.id),
         )
     }
+    LaunchedEffect(store) { store.claimStartupProfile()?.let { connect(it) } }
     BackHandler(settings || state.selected.isNotEmpty()) {
         if (settings) settings = false else store.select("")
     }
@@ -641,6 +644,7 @@ fun SettingsScreen(
     var security by remember { mutableStateOf(false) }
     var biometric by remember { mutableStateOf(store.profiles.biometric) }
     var showThinking by remember { mutableStateOf(store.profiles.showThinking) }
+    var autoConnect by remember { mutableStateOf(store.profiles.autoConnect) }
     fun edit(p: Profile?) {
         editing = p?.id
         creating = p == null
@@ -858,6 +862,25 @@ fun SettingsScreen(
                 Spacer(Modifier.width(8.dp))
                 Text("PCを追加")
             }
+        }
+        HorizontalDivider()
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("起動時にPCへ接続")
+                Text(
+                    "次回起動時、最後に使ったPCへ自動接続します",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = autoConnect,
+                onCheckedChange = {
+                    store.profiles.autoConnect = it
+                    autoConnect = it
+                },
+                modifier = Modifier.testTag("autoConnect"),
+            )
         }
         HorizontalDivider()
         Row(verticalAlignment = Alignment.CenterVertically) {

@@ -48,11 +48,37 @@ class BridgeStore private constructor(val context: Context) {
         mutable.value = mutable.value.copy(error = e.message ?: e.javaClass.simpleName)
     }
 
+    @Volatile private var connectionGeneration = 0L
+    @Volatile var connectionTimings: Map<String, Long> = emptyMap()
+        private set
+
+    private var startupConnectionClaimed = false
+    private var connectingProfile: Profile? = null
+
+    fun isConnectingTo(profile: Profile): Boolean = connectionActive && connectingProfile == profile
+
+    val connectionActive: Boolean
+        get() = connection?.isActive == true
+
+    fun claimStartupProfile(): Profile? {
+        if (startupConnectionClaimed) return null
+        startupConnectionClaimed = true
+        if (!profiles.autoConnect || connectionActive) return null
+        return startupProfile(profiles.all(), profiles.lastProfileId)
+    }
+
     fun connect(profile: Profile) {
+        if (profiles.lastProfileId != profile.id) profiles.lastProfileId = profile.id
+        val previous = mutable.value
+        val sameProfile = previous.profileId == profile.id
+        val generation = ++connectionGeneration
+        val trace = ConnectionTrace { if (connectionGeneration == generation) connectionTimings = it }
+        trace.mark("start")
         val selected = mutable.value.selected.takeIf { mutable.value.profileId == profile.id } ?: ""
         val candidates = profile.connectionHosts
         require(candidates.isNotEmpty()) { "接続先を登録してください" }
         disconnect()
+        connectingProfile = profile
         transitions.clear()
         mutable.value =
             BridgeState(
@@ -60,17 +86,24 @@ class BridgeStore private constructor(val context: Context) {
                 profileId = profile.id,
                 selected = selected,
                 endpoint = candidates.first(),
+                sessions = if (sameProfile) previous.sessions else emptyList(),
+                chats = if (sameProfile) previous.chats else emptyMap(),
             )
         connection =
             scope.launch {
-                val cached = withContext(Dispatchers.IO) { db.cache().all(profile.id) }
-                val chats = mutableMapOf<String, Conversation>()
-                var sessions = emptyList<JSONObject>()
-                for (row in cached) runCatching {
-                    if (row.key == "sessions") sessions = JSONArray(row.json).objects()
-                    else chats[row.key] = Conversation.from(row.json)
+                // Only the small session index gates SSH. Full conversations are loaded on demand.
+                val sessions = withContext(Dispatchers.IO) {
+                    try {
+                        db.cache().row(profile.id, "sessions")?.let { JSONArray(it.json).objects() }
+                            ?: emptyList()
+                    } catch (e: CancellationException) { throw e
+                    } catch (_: Exception) { emptyList() }
                 }
-                mutable.value = mutable.value.copy(chats = chats, sessions = sessions)
+                trace.mark("cache_read")
+                if (mutable.value.sessions.isEmpty()) {
+                    mutable.value = mutable.value.copy(sessions = sessions)
+                }
+                trace.mark("cache_parsed")
                 var retry = 0
                 var candidate = 0
                 while (isActive) {
@@ -82,7 +115,8 @@ class BridgeStore private constructor(val context: Context) {
                             status = "${addressLabel(endpoint)}に接続中",
                             connected = false,
                         )
-                    val c = BridgeClient()
+                    val c = BridgeClient(trace::mark)
+                    trace.mark("client_ready")
                     client = c
                     c.events = { p ->
                         scope.launch {
@@ -91,6 +125,7 @@ class BridgeStore private constructor(val context: Context) {
                     }
                     try {
                         val pem = withContext(Dispatchers.IO) { identity.privatePem() }
+                        trace.mark("key_ready")
                         c.connect(
                             profile.copy(host = endpoint),
                             pem,
@@ -110,6 +145,7 @@ class BridgeStore private constructor(val context: Context) {
                                 check(hello.optInt("protocol") == 1) {
                                     "Unsupported relay protocol"
                                 }
+                                trace.mark("hello")
                                 established = true
                                 mutable.value =
                                     mutable.value.copy(
@@ -120,6 +156,7 @@ class BridgeStore private constructor(val context: Context) {
                                     )
                                 retry = 0
                                 refresh()
+                                trace.mark("sessions_ready")
                                 val selected = mutable.value.selected
                                 if (selected.isNotEmpty()) open(selected)
                                 val ping = launch {
@@ -242,7 +279,8 @@ class BridgeStore private constructor(val context: Context) {
         mutable.value = mutable.value.copy(selected = key, terminal = "")
         scope.launch {
             runCatching {
-                    if (old.isNotEmpty() && old != key)
+                    if (key.isNotEmpty()) loadCachedChat(key)
+                    if (old.isNotEmpty() && old != key && mutable.value.connected)
                         request("session.close", JSONObject().put("sessionKey", old))
                     if (mutable.value.connected) open(key)
                 }
@@ -250,13 +288,34 @@ class BridgeStore private constructor(val context: Context) {
         }
     }
 
+    private suspend fun loadCachedChat(key: String) {
+        if (key.isEmpty() || mutable.value.chats.containsKey(key)) return
+        val profile = mutable.value.profileId
+        val cached = withContext(Dispatchers.IO) {
+            try { db.cache().row(profile, key)?.let { Conversation.from(it.json) }
+            } catch (e: CancellationException) { throw e
+            } catch (_: Exception) { null }
+        } ?: return
+        if (mutable.value.profileId == profile && mutable.value.selected == key &&
+            !mutable.value.chats.containsKey(key)) {
+            mutable.value = mutable.value.copy(chats = mutable.value.chats + (key to cached))
+        }
+    }
+
     suspend fun open(key: String, full: Boolean = false) {
+        val activeClient = client ?: return
+        val profile = mutable.value.profileId
+        loadCachedChat(key)
+        if (client !== activeClient || mutable.value.profileId != profile ||
+            mutable.value.selected != key || !mutable.value.connected) return
         val session = mutable.value.sessions.find { it.optString("sessionKey") == key } ?: return
         if (!session.optBoolean("bridge")) return
         val old = mutable.value.chats[key] ?: Conversation()
         val p = JSONObject().put("sessionKey", key)
         if (!full && old.leaf.isNotEmpty()) p.put("since", old.leaf)
-        val h = request("session.open", p)
+        val h = activeClient.request("session.open", p)
+        if (client !== activeClient || mutable.value.profileId != profile ||
+            mutable.value.selected != key) return
         updateChat(key, Reducer.history(if (full) Conversation(pending = old.pending) else old, h))
     }
 
