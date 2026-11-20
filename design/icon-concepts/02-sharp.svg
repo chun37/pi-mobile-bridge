@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 512 512">
+  <title>Pi Bridge icon concept</title>
+  <rect width="512" height="512" rx="112" fill="#111B30"/>
+  <g fill="none" stroke="#F7FAFC" stroke-width="42" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M211 206 L184 346"/>
+    <path d="M306 190 L306 320 L332 346 L358 346"/>
+    <path d="M123 190 L395 190" stroke-linecap="butt"/>
+  </g>
+  <path d="M344 190 L395 190" fill="none" stroke="#79E2C4" stroke-width="42" stroke-linecap="butt"/>
+</svg>

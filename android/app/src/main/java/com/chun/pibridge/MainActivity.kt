@@ -59,6 +59,23 @@ private val BridgeColors =
 
 class MainActivity : FragmentActivity() {
     private var unlocked by mutableStateOf(false)
+    private val imageDownloads by lazy {
+        androidx.lifecycle.ViewModelProvider(this)[ImageDownloads::class.java]
+    }
+    private val imageSaveLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        imageDownloads.complete(if (it.resultCode == RESULT_OK) it.data?.data else null)
+    }
+
+    internal fun saveImage(asset: ImageAsset) {
+        if (!imageDownloads.begin(asset)) return
+        try {
+            imageSaveLauncher.launch(Intent(Intent.ACTION_CREATE_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE).setType(asset.mimeType)
+                .putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI,
+                    android.provider.DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "primary:Download"))
+                .putExtra(Intent.EXTRA_TITLE, asset.filename))
+        } catch (_: Exception) { imageDownloads.launchFailed() }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,18 +83,20 @@ class MainActivity : FragmentActivity() {
             registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
                 .launch(Manifest.permission.POST_NOTIFICATIONS)
         setContent {
-            MaterialTheme(colorScheme = BridgeColors) {
-                Surface(Modifier.fillMaxSize()) {
-                    if (unlocked) BridgeApp()
-                    else
-                        Column(
-                            Modifier.fillMaxSize().padding(24.dp),
-                            verticalArrangement = Arrangement.Center,
-                        ) {
-                            Text("Pi Bridge", style = MaterialTheme.typography.headlineMedium)
-                            Text("生体認証でPCへの接続を許可してください", Modifier.padding(vertical = 16.dp))
-                            Button(onClick = { authenticate() }) { Text("生体認証で開く") }
-                        }
+            CompositionLocalProvider(LocalImageDownload provides ::saveImage) {
+                MaterialTheme(colorScheme = BridgeColors) {
+                    Surface(Modifier.fillMaxSize()) {
+                        if (unlocked) BridgeApp()
+                        else
+                            Column(
+                                Modifier.fillMaxSize().padding(24.dp),
+                                verticalArrangement = Arrangement.Center,
+                            ) {
+                                Text("Pi Bridge", style = MaterialTheme.typography.headlineMedium)
+                                Text("生体認証でPCへの接続を許可してください", Modifier.padding(vertical = 16.dp))
+                                Button(onClick = { authenticate() }) { Text("生体認証で開く") }
+                            }
+                    }
                 }
             }
         }
@@ -1329,6 +1348,7 @@ fun MessageCard(entry: JSONObject, entries: List<JSONObject>, showThinking: Bool
                         entry.optBoolean("isError"),
                         entry.takeIf { it.has("durationMs") }?.optLong("durationMs"),
                         completed = entry.optString("toolEvent") == "tool_execution_end",
+                        images = toolImageParts(null, entry),
                     )
                 else if (m != null) {
                     if (m.opt("content") is String) Markdown(m.optString("content"))
@@ -1378,6 +1398,7 @@ fun MessageCard(entry: JSONObject, entries: List<JSONObject>, showThinking: Bool
                                                 ?.optLong("durationMs"),
                                         completed = result != null ||
                                             live?.optString("toolEvent") == "tool_execution_end",
+                                        images = toolImageParts(result, live),
                                     )
                                 }
                             }
@@ -1396,6 +1417,7 @@ fun ToolCard(
     error: Boolean,
     durationMs: Long? = null,
     completed: Boolean = false,
+    images: List<JSONObject> = emptyList(),
 ) {
     val status = if (!completed) "実行中" else if (error) "失敗" else "成功"
     val statusColor = when {
@@ -1466,6 +1488,7 @@ fun ToolCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            images.forEach { ImagePreview(it) }
         }
     }
 }
