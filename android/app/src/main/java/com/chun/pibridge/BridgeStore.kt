@@ -28,6 +28,7 @@ data class BridgeState(
     val reloadOutputs: Map<String, ReloadOutput> = emptyMap(),
     val sessionStates: Map<String, SessionUiState> = emptyMap(),
     val canTerminateSession: Boolean = false,
+    val connectionInfo: JSONObject? = null,
 )
 
 class BridgeStore private constructor(val context: Context) {
@@ -173,6 +174,7 @@ class BridgeStore private constructor(val context: Context) {
                                     mutable.value.copy(
                                         status = "接続済み",
                                         connected = true,
+                                        connectionInfo = debugConnectionInfo(hello),
                                         canTerminateSession = hello.optJSONArray("capabilities")?.let { caps ->
                                             (0 until caps.length()).any { caps.optString(it) == "sessionTerminate" }
                                         } == true,
@@ -274,6 +276,20 @@ class BridgeStore private constructor(val context: Context) {
         withContext(Dispatchers.IO) {
             db.cache().put(CacheRow(profile, "sessions", cached))
         }
+    }
+
+    suspend fun sessionDebug(key: String, sid: String, instance: String): JSONObject {
+        val c = client ?: error("PCに接続してください")
+        val profile = mutable.value.profileId
+        fun current() = client === c && mutable.value.connected && mutable.value.profileId == profile &&
+            mutable.value.selected == key && mutable.value.sessions.any {
+                it.optString("sessionKey") == key && it.optString("sessionId") == sid && it.optString("instanceId") == instance
+            }
+        check(current()) { "接続先またはセッションが変わりました" }
+        val result = c.request("session.debug", JSONObject().put("sessionKey", key)
+            .put("expectedSessionId", sid).put("expectedInstanceId", instance), timeoutMs = 15000)
+        check(current()) { "接続先またはセッションが変わりました" }
+        return result
     }
 
     suspend fun terminateSession(target: SessionTerminationTarget) {

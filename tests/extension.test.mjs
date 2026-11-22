@@ -104,6 +104,11 @@ test("secure socket and metadata", async () => {
   const p = await req("info");
   assert.equal(p.result.sessionId, "test-session");
   assert.equal(p.result.model, "test-model");
+  assert.match(p.result.runtime.piVersion, /^\d+\.\d+\.\d+/);
+  assert.equal(p.result.runtime.nodeVersion, process.version);
+  assert.equal(p.result.runtime.platform, process.platform);
+  assert.equal(p.result.runtime.arch, process.arch);
+  assert.equal(p.result.bridgeVersion, "0.3.2");
   assert.equal(p.result.contextUsage.percent, 12.345);
   assert.ok(p.result.capabilities.includes("slashCommands"));
 });
