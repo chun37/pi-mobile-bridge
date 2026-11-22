@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ func creationFixture(t *testing.T, startFails, tabFails bool, busyAttempts ...in
 	t.Helper()
 	var mu sync.Mutex
 	tabs, starts := 0, 0
+	workspaceRoot := t.TempDir()
 	socket := fakeSocket(t, "herdr.sock", func(q obj) obj {
 		mu.Lock()
 		defer mu.Unlock()
@@ -31,8 +33,8 @@ func creationFixture(t *testing.T, startFails, tabFails bool, busyAttempts ...in
 			if p["workspace_id"] != "w1" || p["focus"] != false {
 				t.Error("wrong workspace or stolen focus")
 			}
-			if p["env"] != nil || p["cwd"] != nil {
-				t.Error("unexpected user-supplied process settings")
+			if p["env"] != nil || p["cwd"] != workspaceRoot {
+				t.Error("must use server workspace directory, not client or desktop focus")
 			}
 			if tabFails {
 				return obj{"error": obj{"code": "unknown", "message": "transport failed after creating tab"}}
@@ -57,6 +59,10 @@ func creationFixture(t *testing.T, startFails, tabFails bool, busyAttempts ...in
 			return obj{"error": obj{"code": "unsupported", "message": "unsupported"}}
 		}
 	})
+	data, _ := json.Marshal(obj{"version": 3, "workspaces": []any{obj{"id": "w1", "identity_cwd": workspaceRoot}}})
+	if err := os.WriteFile(filepath.Join(filepath.Dir(socket), "session.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
 	r := &relay{ctx: context.Background(), herdr: socket, dir: t.TempDir(), out: &strings.Builder{},
 		bridges: map[string]bridge{}, sessions: map[string]obj{}, subscriptions: nil,
 		generation: map[string]uint64{}}
@@ -65,7 +71,7 @@ func creationFixture(t *testing.T, startFails, tabFails bool, busyAttempts ...in
 
 func TestCreateNewTabAndReplayAcrossRelayConnections(t *testing.T) {
 	r, tabs, starts, mu := creationFixture(t, false, false)
-	params := obj{"workspaceId": "w1", "requestId": testCreationID, "command": "unsafe", "paneId": "existing"}
+	params := obj{"workspaceId": "w1", "requestId": testCreationID, "command": "unsafe", "paneId": "existing", "cwd": "/client-supplied/should-not-be-used"}
 	first, err := r.createSession(params)
 	if err != nil {
 		t.Fatal(err)

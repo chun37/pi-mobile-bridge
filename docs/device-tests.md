@@ -109,6 +109,17 @@ PiのPID消失と、既存の履歴ファイルがあればその保持を確認
 実行にはHERDR_ENV=1、明示的な--workspace、--relay、--allow-create-closeが必要です。
 モデルへのプロンプトは送らず、失敗時も作成したpane以外は閉じません。
 
+## 新規作成時の開始ディレクトリの試験
+
+scripts/test-workspace-directory.pyは--before-relay、--after-relay、--workspace、--expected-cwd、--allow-create-closeを必須とします。
+旧版と修正版でそれぞれ新しいPiを一つだけ作り、実際のBridge info由来のcwdを比較します。
+修正版では作成結果のcwdと実Piのcwdの両方がexpected-cwdと一致することをassertします。
+作成前から存在するpaneは所有対象とせず、自分で作ったpaneだけを最後に終了します。
+モデルへのプロンプトや既存paneへのcdは送りません。
+PCの選択状態は変更せず、試験前後のfocused paneを記録します。
+
+Goのworkspace_directory_testは、ラベルやtabのcwdと基準ディレクトリが異なる場合、多ホスト、Unicode、空白を含むパス、保存形式不一致、欠落、不正JSON、重複ID、相対パス、非ディレクトリ、symlink、サイズ上限、再確認時の元の結果の保持を検証します。
+
 ## 新しいタブの作成と表示の試験
 
 `NewSessionUiTest`はfixtureなしで「＋」、明示的な確認、作成先の選択、同じIDでの再確認、未接続時の抑止を試験します。

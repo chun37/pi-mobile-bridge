@@ -61,7 +61,7 @@ class DebugInfoDeviceTest {
             assertTrue(runtime.getString("piVersion").matches(Regex("\\d+\\.\\d+\\.\\d+.*")))
             assertTrue(runtime.getString("nodeVersion").startsWith("v"))
             assertEquals("0.3.2", proof!!.getJSONObject("bridge").getString("bridgeVersion"))
-            assertEquals("0.2.0", proof!!.getJSONObject("relay").getString("version"))
+            assertEquals(store.state.value.connectionInfo?.optString("relayVersion"), proof!!.getJSONObject("relay").getString("version"))
             ui.onNodeWithTag("messageInput").assertIsDisplayed()
             ui.onNodeWithTag("terminalToggle").performTouchInput { longClick() }
             ui.onNodeWithTag("debugScreen").assertIsDisplayed()
