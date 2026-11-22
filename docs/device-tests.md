@@ -147,6 +147,39 @@ PC入力経路は上の引数へ`-e nativeInput true`を追加する。
 公開する試験コードに通常の会話のペインやセッションIDを埋め込まない。
 PCの全体checkには、relayの抽出、未確認と失敗、エディター境界、セッションとbridgeの切替を確認する試験も含む。
 
+## 実行状態の試験
+
+SessionUiReducerTest、SessionPacketReducerTest、ReducerTest、StateTransitionsTestを通常のcheckで実行する。
+SessionStateUiTestはSSHやモデルを使わず、状態表示と中断ボタン、送信方式の欄を実際に描画する6件の試験である。
+
+```bash
+adb -s "$SERIAL" shell am instrument -w \
+  -e class com.chun.pibridge.SessionStateUiTest \
+  com.chun.pibridge.test/androidx.test.runner.AndroidJUnitRunner \
+  > evidence/session-state-ui.log 2>&1
+```
+
+SessionStateDeviceTestは、下記の専用Pi起動例で名前をbridge-reactive-verificationにした試験用Piだけを操作する。
+モデルはbridge-fixture、Pi拡張はexecutionStateに対応した0.3.0とし、tui-observerも明示的に読み込む。
+profileId、fixturePane、fixtureSessionIdは必須で、通常のユーザー会話を指定しない。
+
+```bash
+adb -s "$SERIAL" shell am instrument -w \
+  -e class com.chun.pibridge.SessionStateDeviceTest \
+  -e profileId "$PROFILE_ID" -e fixturePane "$FIXTURE_PANE" \
+  -e fixtureSessionId "$FIXTURE_SESSION_ID" \
+  com.chun.pibridge.test/androidx.test.runner.AndroidJUnitRunner \
+  > evidence/session-state-device.log 2>&1
+```
+
+この試験は専用Piの確認画面を開閉し、ローカルモデルへ2回だけ入力する。
+1回目は中断し、2回目は完了を待つ。
+完了後は一覧へ戻り、非同期の購読終了応答後も完了表示を保持することを確認する。
+その後、履歴再取得、SSH再接続、nativeの/reloadを実行し、状態と履歴が整合することを確認する。
+初期件数はキャッシュ表示ではなく、awaitしたlive snapshotから採取する。
+同じ専用Piで繰り返せるが、通常のPiで実行しない。
+実行後はログのOKを確認し、作成した専用タブとローカルモデルサーバーだけを終了する。
+
 ## fixtureと専用Pi
 
 ```bash

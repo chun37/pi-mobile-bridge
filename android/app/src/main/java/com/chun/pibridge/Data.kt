@@ -162,15 +162,17 @@ data class Conversation(
     val entries: List<JSONObject> = emptyList(),
     val leaf: String = "",
     val seq: Long = 0,
-    val state: String = "idle",
     val pending: List<JSONObject> = emptyList(),
+    val sessionId: String = "",
+    val instanceId: String = "",
 ) {
     fun json() =
         JSONObject()
             .put("entries", JSONArray(entries))
             .put("leaf", leaf)
             .put("seq", seq)
-            .put("state", state)
+            .put("sessionId", sessionId)
+            .put("instanceId", instanceId)
             .toString()
 
     companion object {
@@ -180,7 +182,8 @@ data class Conversation(
                 p.optJSONArray("entries").objects(),
                 p.optString("leaf"),
                 p.optLong("seq"),
-                p.optString("state", "idle"),
+                sessionId = p.optString("sessionId", ""),
+                instanceId = p.optString("instanceId", ""),
             )
         }
     }
@@ -200,13 +203,25 @@ fun JSONObject.textContent(): String {
 }
 
 object Reducer {
-    fun history(old: Conversation, p: JSONObject): Conversation {
+    fun history(previous: Conversation, p: JSONObject): Conversation {
+        val info = p.optJSONObject("info")
+        val sid = info?.opt("sessionId") as? String ?: previous.sessionId
+        val instance = info?.opt("instanceId") as? String ?: previous.instanceId
+        val changed = sid != previous.sessionId || instance != previous.instanceId
+        val old = if (changed) Conversation(
+            entries = if (sid == previous.sessionId) previous.entries else emptyList(),
+            leaf = if (sid == previous.sessionId) previous.leaf else "",
+            pending = previous.pending, sessionId = sid, instanceId = instance,
+        ) else previous
+        val late = p.optLong("seq") < old.seq
         val received = p.optJSONArray("entries").objects()
+        val base = if (late) received else old.entries
+        val preferred = if (late) old.entries else received
         val entries =
-            if (p.optBoolean("reset")) received
+            if (p.optBoolean("reset") && !late) received
             else
-                (old.entries.filterNot { current ->
-                        received.any { fresh ->
+                (base.filterNot { current ->
+                        preferred.any { fresh ->
                             current.optString("entryId") == fresh.optString("entryId") ||
                                 (current.optJSONObject("message")?.let { cm ->
                                     fresh.optJSONObject("message")?.let { fm ->
@@ -216,12 +231,12 @@ object Reducer {
                                     }
                                 } == true)
                         }
-                    } + received)
+                    } + preferred)
                     .distinctBy { it.optString("entryId") }
         return old.copy(
             entries = entries,
-            leaf = p.optString("leafId"),
-            seq = p.optLong("seq"),
+            leaf = if (late) old.leaf else p.optString("leafId"),
+            seq = maxOf(old.seq, p.optLong("seq")),
             pending =
                 old.pending.filter { q ->
                     entries.none { it.optString("clientMsgId") == q.optString("clientMsgId") }
@@ -236,11 +251,7 @@ object Reducer {
         val p = packet.optJSONObject("payload") ?: JSONObject()
         var result = old.copy(seq = seq)
         when (kind) {
-            "history_sync" -> result = history(result, p).copy(seq = seq)
-            "agent_start" -> result = result.copy(state = "working")
-            "agent_settled" -> result = result.copy(state = "idle")
-            "ui_prompt_start" -> result = result.copy(state = "blocked")
-            "ui_prompt_end" -> result = result.copy(state = "working")
+            "history_sync" -> result = history(old, p).copy(seq = seq)
             "message_start",
             "message_update",
             "message_end" -> {

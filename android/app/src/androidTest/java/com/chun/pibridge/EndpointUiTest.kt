@@ -175,13 +175,13 @@ class EndpointUiTest {
         ui.onNodeWithTag("messageInput")
             .performTextInput("slow UI_BUSY_COMPOSER " + "abcdefghij".repeat(20))
         ui.onNodeWithTag("send").performClick()
-        waitFor { store.state.value.chats[pane]?.state == "working" }
+        waitFor { store.state.value.sessionUi(pane).working }
         ui.onNodeWithTag("steer").performClick().assertIsSelected()
         ui.onNodeWithTag("followUp").assertIsDisplayed()
         capture("v2-busy-composer.png")
         ui.onNodeWithText("中断").performClick()
         waitFor {
-            store.state.value.chats[pane]?.state == "idle" &&
+            store.state.value.sessionUi(pane).phase in setOf("idle", "done", "aborted", "error") &&
                 store.state.value.sessions
                     .first { it.optString("sessionKey") == pane }
                     .optString("state") != "working"

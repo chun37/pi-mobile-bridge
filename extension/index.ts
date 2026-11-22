@@ -11,7 +11,9 @@ import type {
 
 import { commandCatalog, contextUsage, modelCatalog, RELOAD_COMMAND, runSlashCommand, THINKING_LEVELS } from "./commands.ts";
 
-export const VERSION = "0.2.0";
+import { ExecutionState } from "./execution.ts";
+
+export const VERSION = "0.3.0";
 export const MAX_FRAME = 24 * 1024 * 1024;
 type WireEntry = {
   entryId: string;
@@ -60,6 +62,7 @@ export default function bridge(pi: ExtensionAPI) {
   let server: net.Server | undefined;
   let socketPath: string | undefined;
   let seq = 0;
+  let execution = new ExecutionState();
   let enabled = false;
   let startReason = "startup";
   let instanceId = randomUUID();
@@ -88,7 +91,8 @@ export default function bridge(pi: ExtensionAPI) {
   }
   function emit(event: string, payload: any) {
     if (!enabled) return;
-    const packet = { event, seq: ++seq, payload };
+    const packet = { event, seq: ++seq, sessionId: ctx!.sessionManager.getSessionId(), instanceId,
+      payload, execution: execution.snapshot(seq, ctx!.isIdle()) };
     for (const [s, subscribed] of clients) if (subscribed) write(s, packet);
   }
   function info() {
@@ -115,8 +119,9 @@ export default function bridge(pi: ExtensionAPI) {
       cwd: ctx!.cwd,
       model: ctx!.model?.id,
       contextUsage: contextUsage(ctx!),
-      capabilities: ["slashCommands", "contextUsage"],
+      capabilities: ["slashCommands", "contextUsage", "executionState"],
       idle: ctx!.isIdle(),
+      execution: execution.snapshot(seq, ctx!.isIdle()),
       lastEntryId: sm.getLeafId(),
       lastResponse,
       startReason,
@@ -173,7 +178,7 @@ export default function bridge(pi: ExtensionAPI) {
           ];
         return [];
       });
-    return { entries, leafId: ctx!.sessionManager.getLeafId(), reset, seq };
+    return { entries, leafId: ctx!.sessionManager.getLeafId(), reset, seq, info: info() };
   }
   async function request(s: net.Socket, req: any) {
     const id = typeof req?.id === "string" ? req.id : "";
@@ -196,6 +201,8 @@ export default function bridge(pi: ExtensionAPI) {
           result = { seq };
           break;
         case "abort":
+          if (p.expectedSessionId != null && p.expectedSessionId !== ctx.sessionManager.getSessionId())
+            throw new Error("session_changed");
           ctx.abort();
           result = { aborted: true };
           break;
@@ -320,6 +327,7 @@ export default function bridge(pi: ExtensionAPI) {
     ctx = context;
     if (ctx.mode !== "tui") return;
     startReason = event.reason;
+    execution = new ExecutionState();
     instanceId = randomUUID();
     const dir = path.join(os.homedir(), ".pi", "agent", "bridge");
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -444,6 +452,7 @@ export default function bridge(pi: ExtensionAPI) {
     pi.on(name as any, (event: any, context: ExtensionContext) => {
       if (!enabled) return;
       ctx = context;
+      execution.update(name, event);
       const tag =
         event.message?.role === "user"
           ? origins.get(event.message.timestamp)

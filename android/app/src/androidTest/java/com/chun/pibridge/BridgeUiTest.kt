@@ -72,7 +72,7 @@ class BridgeUiTest {
                 JSONObject().put("paneId", pane).put("keys", org.json.JSONArray(listOf("enter"))),
             )
         }
-        waitUntil { store.state.value.chats[pane]?.state != "blocked" }
+        waitUntil { !store.state.value.sessionUi(pane).blocked }
         ui.runOnUiThread {
             ui.activity.stopService(Intent(ui.activity, BridgeService::class.java))
             store.disconnect()

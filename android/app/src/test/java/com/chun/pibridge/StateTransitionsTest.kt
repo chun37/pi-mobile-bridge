@@ -16,6 +16,24 @@ class StateTransitionsTest {
     }
 
     @Test
+    fun temporaryUnavailableCannotRepeatCompletionNotification() {
+        val t = StateTransitions()
+        t.baseline("p", "working")
+        assertTrue(t.changed("p", "done"))
+        assertFalse(t.changed("p", "unknown"))
+        assertFalse(t.changed("p", "done"))
+    }
+
+    @Test
+    fun completionAfterTemporaryDisconnectStillNotifiesOnce() {
+        val t = StateTransitions()
+        t.baseline("p", "working")
+        assertFalse(t.changed("p", "unknown"))
+        assertTrue(t.changed("p", "done"))
+        assertFalse(t.changed("p", "done"))
+    }
+
+    @Test
     fun initialSnapshotDoesNotNotify() {
         val t = StateTransitions()
         assertFalse(t.changed("p", "blocked"))

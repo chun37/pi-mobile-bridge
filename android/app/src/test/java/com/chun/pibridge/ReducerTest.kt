@@ -111,10 +111,12 @@ class ReducerTest {
     }
 
     @Test
-    fun settledNotAgentEndChangesIdle() {
-        val c = Conversation(state = "working")
-        assertEquals("working", Reducer.event(c, packet(1, "agent_end", JSONObject())).state)
-        assertEquals("idle", Reducer.event(c, packet(2, "agent_settled", JSONObject())).state)
+    fun lifecycleStateIsNotStoredInConversationOrCache() {
+        val c = Reducer.event(Conversation(), packet(1, "agent_start", JSONObject()))
+        val ended = Reducer.event(c, packet(2, "agent_settled", JSONObject()))
+        assertFalse(JSONObject(ended.json()).has("state"))
+        val legacy = JSONObject(ended.json()).put("state", "working").toString()
+        assertEquals(ended.json(), Conversation.from(legacy).json())
     }
 
     @Test
@@ -152,13 +154,81 @@ class ReducerTest {
     }
 
     @Test
+    fun lateHistoryDoesNotMoveEventWatermarkBackwards() {
+        val c = Conversation(seq = 10, entries = listOf(JSONObject().put("entryId", "live")))
+        val h = JSONObject().put("seq", 5).put("reset", true)
+            .put("entries", JSONArray().put(JSONObject().put("entryId", "past")))
+        val n = Reducer.history(c, h)
+        assertEquals(10, n.seq)
+        assertEquals(setOf("live", "past"), n.entries.map { it.optString("entryId") }.toSet())
+    }
+
+    @Test
+    fun lateSnapshotCannotReplaceNewerMessageOrLeaf() {
+        val c = Conversation(seq = 10, leaf = "latest", entries = listOf(
+            JSONObject().put("entryId", "latest").put("message", msg("assistant", "new content", 1))))
+        val h = JSONObject().put("seq", 5).put("leafId", "stale").put("reset", true)
+            .put("entries", JSONArray().put(JSONObject().put("entryId", "stale")
+                .put("message", msg("assistant", "old content", 1))))
+        val n = Reducer.history(c, h)
+        assertEquals("latest", n.leaf); assertEquals(10, n.seq)
+        assertEquals("new content", n.entries.single().getJSONObject("message").textContent())
+    }
+
+    @Test
+    fun newRuntimeResetsConversationWatermarkWithoutDroppingPending() {
+        val pending = JSONObject().put("clientMsgId", "mobile")
+        val c = Conversation(seq = 500, sessionId = "s", instanceId = "old", pending = listOf(pending),
+            entries = listOf(JSONObject().put("entryId", "old-branch")))
+        val h = JSONObject().put("seq", 0).put("reset", true).put("info", JSONObject().put("sessionId", "s").put("instanceId", "new"))
+            .put("entries", JSONArray().put(JSONObject().put("entryId", "current")))
+        val n = Reducer.history(c, h)
+        assertEquals(0, n.seq); assertEquals("new", n.instanceId)
+        assertEquals(listOf("current"), n.entries.map { it.optString("entryId") })
+        assertEquals(listOf(pending), n.pending)
+    }
+
+    @Test
+    fun runtimeChangeDuringIncrementalRequestKeepsSameSessionHistory() {
+        val c = Conversation(seq = 500, sessionId = "s", instanceId = "old",
+            entries = listOf(JSONObject().put("entryId", "cached")), leaf = "cached")
+        val h = JSONObject().put("seq", 0).put("reset", false)
+            .put("info", JSONObject().put("sessionId", "s").put("instanceId", "new"))
+            .put("entries", JSONArray()).put("leafId", "cached")
+        val n = Reducer.history(c, h)
+        assertEquals(0, n.seq); assertEquals("new", n.instanceId)
+        assertEquals(listOf("cached"), n.entries.map { it.optString("entryId") })
+    }
+
+    @Test
+    fun sameRuntimeRetainsWatermarkAndHistoryCanReconcilePending() {
+        val c = Conversation(seq = 10, sessionId = "s", instanceId = "a",
+            pending = listOf(JSONObject().put("clientMsgId", "mobile")))
+        val h = JSONObject().put("seq", 11).put("info", JSONObject().put("sessionId", "s").put("instanceId", "a"))
+            .put("entries", JSONArray().put(JSONObject().put("entryId", "e").put("clientMsgId", "mobile")))
+        val n = Reducer.history(c, h)
+        assertEquals(11, n.seq); assertTrue(n.pending.isEmpty())
+        assertEquals("s", n.sessionId); assertEquals("a", n.instanceId)
+    }
+
+    @Test
+    fun legacyCacheStateCannotEnableAbortOrOverrideDone() {
+        val legacy = Conversation.from("{\"entries\":[],\"state\":\"working\",\"seq\":99}")
+        val session = JSONObject().put("sessionKey", "p").put("bridge", true).put("state", "done")
+        val state = BridgeState(connected = true, sessions = listOf(session), chats = mapOf("p" to legacy))
+        assertEquals("done", state.sessionUi("p").phase)
+        assertFalse(state.sessionUi("p").canAbort)
+    }
+
+    @Test
     fun cacheRoundtrip() {
         val c =
             Conversation(
                 entries = listOf(JSONObject().put("entryId", "e").put("text", "日本語\u2029")),
                 leaf = "e",
                 seq = 9,
-                state = "blocked",
+                sessionId = "s",
+                instanceId = "runtime",
             )
         val n = Conversation.from(c.json())
         assertEquals(c.json(), n.json())

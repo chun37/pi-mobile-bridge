@@ -32,7 +32,7 @@ relayは診断メッセージをstdoutへ混ぜません。
 | `session.commands` | `sessionKey` | `commands`, `models`, `thinkingLevels` |
 | `session.reloadOutput` | `sessionKey`, `expectedSessionId` | `sessionId`, `instanceId`, `phase`, `text` |
 | `session.send` | `sessionKey`, `text`, 任意の`images`, `deliverAs`, `clientMsgId`, `expectedSessionId` | `accepted`, `clientMsgId`, `status`, コマンドでは`message` |
-| `session.abort` | `sessionKey` | 中断要求の結果 |
+| `session.abort` | `sessionKey`, 任意の`expectedSessionId` | 中断要求の結果 |
 | `terminal.read` | `paneId`, 任意の`source` | herdrのpane.read結果 |
 | `terminal.input` | `paneId`, `text`, 任意の`keys` | herdrのpane.send_input結果 |
 | `terminal.keys` | `paneId`, `keys` | herdrのpane.send_keys結果 |
@@ -61,6 +61,24 @@ textは最大1MiB、画像は最大4枚で、デコード後の各画像は4MiB�
 `accepted` は入力の受理であり、モデルやツールの処理完了ではありません。
 送信後のmessage_startで仮表示と対応づけ、agent_settledで完了を判断します。
 輸送途中で切れて結果が不明な要求を、Androidが自動で再送することはありません。
+
+## 実行状態のスナップショット
+
+Pi拡張0.3.0のinfoはcapabilitiesに`executionState`を含めます。
+infoとsessions.listの各行は`instanceId`と`execution: {state, seq}`を含みます。
+historyとsession.openの`info.execution.seq`は、同じ呼び出し内で取得した履歴のseqと一致します。
+stateはidle、working、blocked、done、aborted、errorのいずれかです。
+Androidが観測できない状態はunknownとして扱います。
+
+session.eventは発行時点のsessionId、instanceId、executionも持ちます。
+実行状態は同じidentity内のseqで比較し、古いスナップショットや重複イベントで巻き戻しません。
+新しいidentityでは小さいseqを受け入れます。
+実行状態が先に更新されても、会話パケットは会話自身のseqで処理します。
+旧拡張にexecutionがない場合も受け入れますが、スナップショットの原子性は保証できません。
+
+expectedSessionId付きのabortは、セッションが変わっていたら副作用なしでsession_changedを返します。
+この中断要求がunsupportedの場合は、別のセッションを誤って中断しないよう、無条件のEscape送信へ代替しません。
+詳しい状態遷移とキャッシュの扱いはexecution-state.mdを参照してください。
 
 ## コマンドとコンテキスト使用量
 

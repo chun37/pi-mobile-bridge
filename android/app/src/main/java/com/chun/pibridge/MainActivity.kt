@@ -139,7 +139,10 @@ fun stateLabel(state: String) =
         "working" -> "実行中"
         "blocked" -> "応答待ち"
         "done" -> "完了"
+        "aborted" -> "中断済み"
+        "error" -> "エラー"
         "idle" -> "待機中"
+        "unknown" -> "状態不明"
         else -> "ターミナル"
     }
 
@@ -150,6 +153,7 @@ fun StateBadge(state: String) {
             "working" -> Color(0xff6cdec8)
             "blocked" -> Color(0xffffcf7b)
             "done" -> Color(0xff9ab4ff)
+            "error" -> MaterialTheme.colorScheme.error
             else -> MaterialTheme.colorScheme.onSurfaceVariant
         }
     Surface(color = color.copy(alpha = .12f), shape = RoundedCornerShape(8.dp)) {
@@ -514,7 +518,7 @@ fun ColumnScope.SessionList(store: BridgeStore, state: BridgeState) {
         shape = RoundedCornerShape(14.dp),
     )
     val filtered =
-        state.sessions.filter {
+        state.sessions.map { session -> JSONObject(session.toString()).put("state", state.sessionUi(session.optString("sessionKey")).phase) }.filter {
             it.optBoolean("bridge") &&
                 (query.isBlank() ||
                     listOf("sessionName", "tab", "cwd", "workspace").any { field ->
@@ -597,7 +601,7 @@ fun ColumnScope.SessionList(store: BridgeStore, state: BridgeState) {
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
-                                    StateBadge(s.optString("state"))
+                                    StateBadge(state.sessionUi(s.optString("sessionKey")).phase)
                                 }
                                 if (last.isNotBlank())
                                     Text(
@@ -1004,7 +1008,8 @@ fun ColumnScope.ChatScreen(store: BridgeStore, state: BridgeState) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
-    val working = chat.state == "working" || session?.optString("state") == "working"
+    val execution = state.sessionUi(key)
+    val working = execution.working
     LaunchedEffect(key, state.connected, session?.optString("sessionId"), supportsSlash(session), text.text.startsWith("/"), state.slashCatalog) {
         if (state.connected && text.text.startsWith("/") && state.slashCatalog == null) store.refreshCommands(key)
     }
@@ -1185,7 +1190,7 @@ fun ColumnScope.ChatScreen(store: BridgeStore, state: BridgeState) {
                 )
             }
         }
-        if (chat.state == "blocked" || session?.optString("state") == "blocked")
+        if (execution.blocked)
             FilledTonalButton(
                 onClick = { terminal = true },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -1202,29 +1207,7 @@ fun ColumnScope.ChatScreen(store: BridgeStore, state: BridgeState) {
                 Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                if (working)
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        FilterChip(
-                            selected = delivery == "followUp",
-                            onClick = { delivery = "followUp" },
-                            label = { Text("次に送る") },
-                            modifier = Modifier.testTag("followUp"),
-                        )
-                        FilterChip(
-                            selected = delivery == "steer",
-                            onClick = { delivery = "steer" },
-                            label = { Text("割り込む") },
-                            modifier = Modifier.testTag("steer"),
-                        )
-                        Spacer(Modifier.weight(1f))
-                        TextButton(onClick = { store.abort(key) }, enabled = state.connected) {
-                            Icon(Icons.Default.Stop, null, Modifier.size(16.dp))
-                            Text("中断")
-                        }
-                    }
+                RunActions(execution, delivery, { delivery = it }, { store.abort(key) })
                 if (images.isNotEmpty())
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(

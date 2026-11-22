@@ -249,6 +249,41 @@ test("command catalog and slash dispatch never turn unknown commands into prompt
   assert.equal(sent.length, before + 1);
 });
 
+test("atomic snapshots and streamed packets share identity, execution and watermark", async () => {
+  await req("subscribe");
+  const before = events.length;
+  idle = false;
+  await emit("agent_start");
+  const running = (await req("history")).result;
+  assert.equal(running.info.execution.state, "working");
+  assert.equal(running.info.execution.seq, running.seq);
+  assert.equal(running.info.sessionId, "test-session");
+  assert.ok(running.info.capabilities.includes("executionState"));
+  await emit("agent_end");
+  assert.equal((await req("info")).result.execution.state, "working");
+  idle = true;
+  await emit("agent_settled", { aborted: false });
+  const done = (await req("history")).result;
+  assert.equal(done.info.execution.state, "done");
+  assert.equal(done.info.execution.seq, done.seq);
+  assert.equal(done.info.instanceId, running.info.instanceId);
+  const live = events.slice(before).filter(e => e.event === "agent_settled").at(-1);
+  assert.equal(live.execution.state, "done");
+  assert.equal(live.execution.seq, live.seq);
+  assert.equal(live.sessionId, done.info.sessionId);
+  assert.equal(live.instanceId, done.info.instanceId);
+});
+
+test("abort rejects changed conversations before any side effect", async () => {
+  const before = aborts;
+  const rejected = await req("abort", { expectedSessionId: "old-conversation" });
+  assert.match(rejected.error.message, /session_changed/);
+  assert.equal(aborts, before);
+  const accepted = await req("abort", { expectedSessionId: "test-session" });
+  assert.equal(accepted.result.aborted, true);
+  assert.equal(aborts, before + 1);
+});
+
 test("shutdown and reload are idempotent; non-TUI has no socket", async () => {
   await emit("session_shutdown");
   await emit("session_shutdown");

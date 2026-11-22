@@ -13,6 +13,8 @@ class StateTransitions {
     }
 
     fun changed(key: String, state: String): Boolean {
+        // Temporary loss of observability is not a new run or a notification baseline.
+        if (state == "unknown" || state.isEmpty()) return false
         val previous = states.put(key, state)
         return previous != null && previous != state && state in setOf("blocked", "done")
     }

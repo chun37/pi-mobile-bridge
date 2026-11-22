@@ -6,6 +6,7 @@ import java.util.UUID
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -25,6 +26,7 @@ data class BridgeState(
     val slashError: String = "",
     val commandNotice: String = "",
     val reloadOutputs: Map<String, ReloadOutput> = emptyMap(),
+    val sessionStates: Map<String, SessionUiState> = emptyMap(),
 )
 
 class BridgeStore private constructor(val context: Context) {
@@ -33,15 +35,28 @@ class BridgeStore private constructor(val context: Context) {
     private val db = Room.databaseBuilder(context, CacheDb::class.java, "bridge.db").build()
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val mutable = MutableStateFlow(BridgeState())
-    val state: StateFlow<BridgeState> = mutable
+    val state: StateFlow<BridgeState> = mutable.asStateFlow()
     private var client: BridgeClient? = null
     private var commandGeneration = 0L
+    private var sessionMetadataVersion = 0L
     private var connection: Job? = null
     private val cacheJobs = mutableMapOf<String, Job>()
+    private val resyncJobs = mutableMapOf<String, Job>()
+    private val resyncPending = mutableSetOf<String>()
     private val transitions = StateTransitions()
 
     private fun observeState(key: String, state: String) {
         if (transitions.changed(key, state)) notifyState(key, state)
+    }
+
+    private fun applySessionUi(key: String, value: SessionUiState) {
+        mutable.value = mutable.value.withSessionUi(key, value)
+        observeState(key, value.phase)
+    }
+
+    private fun applySessions(list: List<JSONObject>) {
+        mutable.value = mutable.value.withSessionList(list)
+        for ((key, value) in mutable.value.sessionStates) observeState(key, value.phase)
     }
 
     var notifyState: (String, String) -> Unit = { _, _ -> }
@@ -225,24 +240,35 @@ class BridgeStore private constructor(val context: Context) {
     }
 
     fun disconnect() {
+        val synchronizing = resyncJobs.values.toList()
+        resyncJobs.clear()
+        resyncPending.clear()
+        synchronizing.forEach { it.cancel() }
         connection?.cancel()
         connection = null
         val c = client
         client = null
         scope.launch(Dispatchers.IO) { c?.close() }
+        for ((key, value) in mutable.value.sessionStates) applySessionUi(key, SessionUiReducer.unavailable(value))
         mutable.value = mutable.value.copy(connected = false, status = "未接続")
     }
 
     suspend fun request(method: String, p: JSONObject = JSONObject()): JSONObject =
         (client ?: error("未接続")).request(method, p)
 
-    suspend fun refresh() {
-        val list = request("sessions.list").optJSONArray("sessions").objects()
-        for (s in list) observeState(s.optString("sessionKey"), s.optString("state"))
-        mutable.value = mutable.value.copy(sessions = list)
+    suspend fun refresh() = withContext(Dispatchers.Main.immediate) { refreshOnMain() }
+
+    private suspend fun refreshOnMain() {
+        val c = client ?: return
+        val profile = mutable.value.profileId
+        val observedVersion = sessionMetadataVersion
+        val list = c.request("sessions.list").optJSONArray("sessions").objects()
+        if (client !== c || mutable.value.profileId != profile) return
+        // A sessions.changed delta received during this RPC is newer than its list snapshot.
+        if (observedVersion == sessionMetadataVersion) applySessions(list)
+        val cached = JSONArray(mutable.value.sessions).toString()
         withContext(Dispatchers.IO) {
-            db.cache()
-                .put(CacheRow(mutable.value.profileId, "sessions", JSONArray(list).toString()))
+            db.cache().put(CacheRow(profile, "sessions", cached))
         }
     }
 
@@ -282,14 +308,18 @@ class BridgeStore private constructor(val context: Context) {
             }
         }
         val old = mutable.value.selected
+        if (old.isNotEmpty() && old != key) {
+            applySessionUi(old, SessionUiReducer.viewClosed(mutable.value.sessionUi(old)))
+        }
         commandGeneration++
         mutable.value = mutable.value.copy(selected = key, terminal = "", slashCatalog = null,
             slashLoading = false, slashError = "", commandNotice = "")
         scope.launch {
             runCatching {
                     if (key.isNotEmpty()) loadCachedChat(key)
-                    if (old.isNotEmpty() && old != key && mutable.value.connected)
+                    if (old.isNotEmpty() && old != key && mutable.value.connected) {
                         request("session.close", JSONObject().put("sessionKey", old))
+                    }
                     if (mutable.value.connected) {
                         open(key)
                         if (key.isNotEmpty()) refreshCommands(key)
@@ -313,7 +343,10 @@ class BridgeStore private constructor(val context: Context) {
         }
     }
 
-    suspend fun open(key: String, full: Boolean = false) {
+    suspend fun open(key: String, full: Boolean = false) =
+        withContext(Dispatchers.Main.immediate) { openOnMain(key, full) }
+
+    private suspend fun openOnMain(key: String, full: Boolean) {
         if (full && mutable.value.selected == key) {
             commandGeneration++
             mutable.value = mutable.value.copy(slashCatalog = null, slashLoading = false, slashError = "")
@@ -327,11 +360,21 @@ class BridgeStore private constructor(val context: Context) {
         if (!session.optBoolean("bridge")) return
         val old = mutable.value.chats[key] ?: Conversation()
         val p = JSONObject().put("sessionKey", key)
-        if (!full && old.leaf.isNotEmpty()) p.put("since", old.leaf)
+        if (!full && old.leaf.isNotEmpty() && old.sessionId == session.optString("sessionId") &&
+            old.instanceId == session.optString("instanceId")) p.put("since", old.leaf)
         val h = activeClient.request("session.open", p)
         if (client !== activeClient || mutable.value.profileId != profile ||
             mutable.value.selected != key) return
-        updateChat(key, Reducer.history(if (full) Conversation(pending = old.pending) else old, h))
+        val info = h.optJSONObject("info")
+        if (info != null) {
+            val current = mutable.value.sessionUi(key)
+            val identity = "${info.optString("sessionId")}|${info.optString("instanceId")}"
+            if (identity in current.retired) return
+            applySessionUi(key, SessionUiReducer.snapshot(current, info, h.optLong("seq")))
+        }
+        val latest = mutable.value.chats[key] ?: old
+        if (full || !p.has("since")) h.put("reset", true)
+        updateChat(key, Reducer.history(latest, h))
     }
 
     private fun updateChat(key: String, chat: Conversation) {
@@ -345,10 +388,34 @@ class BridgeStore private constructor(val context: Context) {
             }
     }
 
+    private fun resync(key: String) {
+        if (key != mutable.value.selected) return
+        if (resyncJobs[key]?.isActive == true) {
+            resyncPending.add(key)
+            return
+        }
+        val c = client ?: return
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                open(key, true)
+            } catch (e: CancellationException) { throw e
+            } catch (e: Exception) { if (client === c) error(e)
+            } finally {
+                if (resyncJobs[key] === currentCoroutineContext().job) {
+                    resyncJobs.remove(key)
+                    if (resyncPending.remove(key)) resync(key)
+                }
+            }
+        }
+        resyncJobs[key] = job
+        job.start()
+    }
+
     private suspend fun onEvent(p: JSONObject) {
         val key = p.optString("sessionKey")
         when (p.optString("event")) {
             "sessions.changed" -> {
+                sessionMetadataVersion++
                 val before =
                     mutable.value.sessions.associateBy { it.optString("sessionKey") }.toMutableMap()
                 val removed = p.optJSONArray("removed")
@@ -356,54 +423,48 @@ class BridgeStore private constructor(val context: Context) {
                     for (i in 0 until removed.length()) before.remove(removed.optString(i))
                 for (s in p.optJSONArray("added").objects() + p.optJSONArray("updated").objects()) {
                     before[s.optString("sessionKey")] = s
-                    observeState(s.optString("sessionKey"), s.optString("state"))
                 }
                 val selected = mutable.value.selected
                 val previous =
                     mutable.value.sessions.find { it.optString("sessionKey") == selected }
-                mutable.value = mutable.value.copy(sessions = before.values.toList())
+                applySessions(before.values.toList())
                 val current = before[selected]
                 if (
                     selected.isNotEmpty() &&
                         current?.optBoolean("bridge") == true &&
                         (previous?.optBoolean("bridge") != true ||
-                            previous?.optString("sessionId") != current.optString("sessionId"))
+                            previous?.optString("sessionId") != current.optString("sessionId") ||
+                            previous?.optString("instanceId") != current.optString("instanceId"))
                 )
-                    open(selected, true)
+                    resync(selected)
             }
             "agent.state" -> {
-                val newState = p.optString("state")
-                mutable.value =
-                    mutable.value.copy(
-                        sessions =
-                            mutable.value.sessions.map {
-                                if (it.optString("sessionKey") == key)
-                                    JSONObject(it.toString()).put("state", newState)
-                                else it
-                            }
-                    )
-                observeState(key, newState)
+                applySessionUi(key, SessionUiReducer.fallback(mutable.value.sessionUi(key), p.optString("state")))
             }
             "session.event" -> {
-                val old = mutable.value.chats[key] ?: Conversation()
-                val seq = p.optLong("seq")
-                if (old.seq > 0 && seq > old.seq + 1) {
-                    open(key, true)
-                    return
-                }
-                updateChat(key, Reducer.event(old, p))
-                if (p.optString("kind") in listOf("session_tree", "session_compact"))
-                    open(key, true)
+                val before = mutable.value
+                val result = before.reduceSessionPacket(key, p)
+                mutable.value = result.state
+                observeState(key, result.state.sessionUi(key).phase)
+                if (result.resync) resync(key)
+                else result.state.chats[key]?.takeIf { it != before.chats[key] }?.let { updateChat(key, it) }
+                if (p.optString("kind") in listOf("session_tree", "session_compact")) resync(key)
             }
-            "session.reset" -> if (key == mutable.value.selected) {
-                if (p.optString("reason") == "reload") captureReloadOutput(key)
-                open(key, true)
+            "session.reset" -> {
+                val previous = mutable.value.sessionUi(key)
+                val identity = JSONObject().put("sessionId", p.opt("sessionId"))
+                    .put("instanceId", p.opt("instanceId")).put("bridge", true)
+                if (!SessionUiReducer.accepts(previous, identity)) return
+                applySessionUi(key, SessionUiReducer.unavailable(SessionUiReducer.metadata(previous, identity)))
+                if (key == mutable.value.selected) {
+                    if (p.optString("reason") == "reload") captureReloadOutput(key)
+                    resync(key)
+                }
             }
             "resync" -> {
                 refresh()
                 val selected = mutable.value.selected
-                if (selected.isNotEmpty() && (key.isEmpty() || key == selected))
-                    open(selected, true)
+                if (selected.isNotEmpty() && (key.isEmpty() || key == selected)) resync(selected)
             }
         }
     }
@@ -485,7 +546,7 @@ class BridgeStore private constructor(val context: Context) {
             val reason = when {
                 !supportsSlash(session) -> "PCのこのPiで /reload を1回実行してください"
                 images.isNotEmpty() -> "コマンドに画像は添付できません"
-                mutable.value.chats[key]?.state == "working" || session?.optString("state") == "working" ->
+                mutable.value.sessionUi(key).working ->
                     "コマンドは実行が完了してから送信してください"
                 else -> null
             }
@@ -506,7 +567,7 @@ class BridgeStore private constructor(val context: Context) {
                         .put("images", JSONArray(images))
                         .put("deliverAs", delivery)
                         .put("clientMsgId", id)
-                        .put("expectedSessionId", session?.opt("sessionId") as? String),
+                        .put("expectedSessionId", mutable.value.sessionUi(key).sessionId.takeIf { it.isNotEmpty() }),
                 )
                 if (client !== sendingClient || mutable.value.profileId != sendingProfile) return@launch
                 if (command) {
@@ -554,8 +615,13 @@ class BridgeStore private constructor(val context: Context) {
     }
 
     fun abort(key: String) {
+        val c = client ?: return
+        val execution = mutable.value.sessionUi(key)
+        if (!execution.canAbort) return
         scope.launch {
-            runCatching { request("session.abort", JSONObject().put("sessionKey", key)) }
+            if (client !== c || !mutable.value.sessionUi(key).canAbort) return@launch
+            runCatching { c.request("session.abort", JSONObject().put("sessionKey", key)
+                .put("expectedSessionId", execution.sessionId)) }
                 .onFailure { error(it) }
         }
     }

@@ -144,7 +144,7 @@ func (r *relay) discover() {
 		b, ok := bridges[id]
 		s := obj{"sessionKey": id, "paneId": id, "workspace": ws[str(p["workspace_id"])], "workspaceId": p["workspace_id"], "tabId": p["tab_id"], "tab": tabs[str(p["tab_id"])], "state": p["agent_status"], "agent": p["agent"], "bridge": ok, "cwd": p["cwd"]}
 		if ok {
-			for _, k := range []string{"sessionId", "sessionName", "cwd", "model", "lastEntryId", "lastResponse", "contextUsage", "capabilities"} {
+			for _, k := range []string{"sessionId", "sessionName", "cwd", "model", "lastEntryId", "lastResponse", "contextUsage", "capabilities", "instanceId", "execution"} {
 				s[k] = b.info[k]
 			}
 			s["lastActivityAt"] = sessionActivity(b.info)
@@ -172,7 +172,7 @@ func (r *relay) discover() {
 			if reason == "" {
 				reason = "session_changed"
 			}
-			resets = append(resets, obj{"event": "session.reset", "sessionKey": key, "reason": reason})
+			resets = append(resets, obj{"event": "session.reset", "sessionKey": key, "reason": reason, "sessionId": b.info["sessionId"], "instanceId": b.info["instanceId"]})
 		}
 		r.identities[key] = identity
 	}
@@ -268,6 +268,17 @@ func (r *relay) open(key, since string) (obj, error) {
 		c.Close()
 		return nil, e
 	}
+	// New extensions return identity and execution state in the atomic history snapshot.
+	// Legacy extensions are supported, but have no sequenced execution snapshot.
+	info := object(h["info"])
+	if len(info) == 0 {
+		info, e = rpc(b.socket, "info", obj{})
+		if e != nil {
+			c.Close()
+			return nil, e
+		}
+		h["info"] = info
+	}
 	c.SetDeadline(time.Time{})
 	watermark, _ := h["seq"].(float64)
 	r.workers.Add(1)
@@ -294,7 +305,11 @@ func (r *relay) open(key, since string) (obj, error) {
 			active = r.generation[key] == gen
 			r.mu.Unlock()
 			if active {
-				r.write(obj{"event": "session.event", "sessionKey": key, "seq": ev["seq"], "kind": ev["event"], "payload": ev["payload"]})
+				identity := info
+				if str(ev["sessionId"]) != "" && str(ev["instanceId"]) != "" {
+					identity = ev // Session switches can happen before the next discovery.
+				}
+				r.write(obj{"event": "session.event", "sessionKey": key, "sessionId": identity["sessionId"], "instanceId": identity["instanceId"], "seq": ev["seq"], "kind": ev["event"], "payload": ev["payload"], "execution": ev["execution"]})
 			}
 			r.eventMu.Unlock()
 		}
@@ -384,8 +399,8 @@ func (r *relay) handle(req obj) (any, error) {
 		if e != nil {
 			return nil, e
 		}
-		result, e := rpc(b.socket, "abort", obj{})
-		if e != nil && strings.Contains(e.Error(), "unsupported") {
+		result, e := rpc(b.socket, "abort", obj{"expectedSessionId": p["expectedSessionId"]})
+		if e != nil && strings.Contains(e.Error(), "unsupported") && str(p["expectedSessionId"]) == "" {
 			return rpc(r.herdr, "pane.send_keys", obj{"pane_id": key, "keys": []string{"esc"}})
 		}
 		return result, e
