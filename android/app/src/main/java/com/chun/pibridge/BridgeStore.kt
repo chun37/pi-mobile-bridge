@@ -24,6 +24,7 @@ data class BridgeState(
     val slashLoading: Boolean = false,
     val slashError: String = "",
     val commandNotice: String = "",
+    val reloadOutputs: Map<String, ReloadOutput> = emptyMap(),
 )
 
 class BridgeStore private constructor(val context: Context) {
@@ -394,13 +395,57 @@ class BridgeStore private constructor(val context: Context) {
                 if (p.optString("kind") in listOf("session_tree", "session_compact"))
                     open(key, true)
             }
-            "session.reset" -> if (key == mutable.value.selected) open(key, true)
+            "session.reset" -> if (key == mutable.value.selected) {
+                if (p.optString("reason") == "reload") captureReloadOutput(key)
+                open(key, true)
+            }
             "resync" -> {
                 refresh()
                 val selected = mutable.value.selected
                 if (selected.isNotEmpty() && (key.isEmpty() || key == selected))
                     open(selected, true)
             }
+        }
+    }
+
+    fun dismissReloadOutput(key: String) {
+        mutable.value = mutable.value.copy(reloadOutputs = mutable.value.reloadOutputs - key)
+    }
+
+    private fun captureReloadOutput(key: String) {
+        val c = client ?: return
+        val profile = mutable.value.profileId
+        val sessionId = mutable.value.sessions.find { it.optString("sessionKey") == key }
+            ?.opt("sessionId") as? String ?: return
+        val token = UUID.randomUUID().toString()
+        fun current() = client === c && mutable.value.profileId == profile &&
+            mutable.value.reloadOutputs[key]?.requestId == token &&
+            mutable.value.sessions.any { it.optString("sessionKey") == key && it.optString("sessionId") == sessionId }
+        fun show(phase: String, text: String = "") {
+            mutable.value = mutable.value.copy(reloadOutputs = mutable.value.reloadOutputs +
+                (key to ReloadOutput(sessionId, token, phase, text)))
+        }
+        show("loading")
+        scope.launch {
+            var lastText = ""
+            repeat(6) {
+                if (!current()) return@launch
+                try {
+                    val result = c.request("session.reloadOutput", JSONObject().put("sessionKey", key)
+                        .put("expectedSessionId", sessionId), timeoutMs = 1500)
+                    if (!current()) return@launch
+                    if (result.optString("sessionId") != sessionId) return@launch
+                    lastText = result.optString("text")
+                    val phase = result.optString("phase")
+                    if (phase == "complete" || phase == "failed") {
+                        show(phase, lastText)
+                        return@launch
+                    }
+                } catch (e: CancellationException) { throw e
+                } catch (_: Exception) { /* Retry only this bounded, read-only observation. */ }
+                delay(250)
+            }
+            if (current()) show("unavailable", lastText)
         }
     }
 

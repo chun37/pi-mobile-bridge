@@ -1194,6 +1194,9 @@ fun ColumnScope.ChatScreen(store: BridgeStore, state: BridgeState) {
                 Spacer(Modifier.width(8.dp))
                 Text("ターミナルで応答")
             }
+        state.reloadOutputs[key]?.takeIf { it.sessionId == session?.optString("sessionId") }?.let { output ->
+            ReloadOutputCard(output, onTerminal = { terminal = true }, onDismiss = { store.dismissReloadOutput(key) })
+        }
         Surface(tonalElevation = 3.dp) {
             Column(
                 Modifier.padding(horizontal = 12.dp, vertical = 8.dp),

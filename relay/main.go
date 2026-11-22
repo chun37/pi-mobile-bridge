@@ -354,6 +354,8 @@ func (r *relay) handle(req obj) (any, error) {
 		}
 		r.mu.Unlock()
 		return obj{"closed": true}, nil
+	case "session.reloadOutput":
+		return r.reloadOutput(key, str(p["expectedSessionId"]))
 	case "session.commands":
 		b, e := r.get(key)
 		if e != nil {

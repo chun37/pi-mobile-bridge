@@ -30,6 +30,7 @@ relayは診断メッセージをstdoutへ混ぜません。
 | `session.open` | `sessionKey`, 任意の`since` | `info`, `entries`, `leafId`, `seq`, `reset` |
 | `session.close` | `sessionKey` | `closed: true` |
 | `session.commands` | `sessionKey` | `commands`, `models`, `thinkingLevels` |
+| `session.reloadOutput` | `sessionKey`, `expectedSessionId` | `sessionId`, `instanceId`, `phase`, `text` |
 | `session.send` | `sessionKey`, `text`, 任意の`images`, `deliverAs`, `clientMsgId`, `expectedSessionId` | `accepted`, `clientMsgId`, `status`, コマンドでは`message` |
 | `session.abort` | `sessionKey` | 中断要求の結果 |
 | `terminal.read` | `paneId`, 任意の`source` | herdrのpane.read結果 |
@@ -93,6 +94,26 @@ Androidはコマンドを通常入力の仮メッセージにせず、入力欄�
 expectedSessionIdが指定され、実行先の現在のセッションIDと異なる場合はsession_changedを返します。
 Androidは送信時の接続とPCを保持し、別PCへ切り替わっても遅延送信を移し替えません。
 候補の取得結果もPC、セッション、選択先、再読込の世代を確認してから反映します。
+
+## 再読み込み結果の観測
+
+選択中のセッションでreason=reloadのsession.resetを受けたAndroidは、session.reloadOutputを読み取り専用で要求します。
+relayはPiのinfo、herdrのpane.read、再度Piのinfoの順に取得し、セッションIDとbridgeのinstanceIdが変わっていないことを確認します。
+別の会話や別のbridgeへ切り替わった場合は結果を返しません。
+pane.readはsource=visible、format=textに固定し、スクロールやキー送信は行いません。
+認識したリソース見出しとその本文、Reloaded/Reloading/Reload failedの区画だけを抽出します。
+エディター前の水平罫線で走査を止め、入力欄に見出しと同じ文字列があっても取得しません。
+端末表示全体を転送するAPIではなく、上限64KiBとします。
+
+phaseはcomplete、failed、loading、unavailableのいずれかです。
+完了と失敗はPCの対応する表示文字列を取得した場合だけ返します。
+リソースの区画だけが見つかっても完了とはしません。
+Androidは最大6回、各要求1.5秒と250ms間隔で観測し、最後まで不明なら未確認と表示します。
+この再試行は観測だけであり、reload自体を再送しません。
+結果の反映前に接続、PC、セッションID、要求の世代を確認します。
+結果を閉じると遅れて届いた応答も反映しません。
+結果はメモリ上の表示専用で、通常の会話、モデルの入力、キャッシュへ追加しません。
+切断中や別の会話を開いている間の過去の再読み込み結果は収集しません。
 
 ## 新しいタブとセッションの作成
 

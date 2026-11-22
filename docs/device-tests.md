@@ -125,6 +125,28 @@ adb -s "$SERIAL" shell am instrument -w -r \
 専用のBRIDGE_TEST_ROOTへ引数とセッションIDだけを記録し、固定した試験用のセッション名へ変更する。
 試験後は作成した専用fixtureだけを停止する。
 
+## 再読み込み結果の実機試験
+
+`ReloadOutputUiTest`は実通信なしで、元の出力、閉じる操作、ターミナルへの表示切替、確認中と未確認と失敗の区別を確認する。
+`ReloadOutputDeviceTest`は専用のbridge-fixtureモデルだけを許可し、通常会話では実行しない。
+次節の専用設定をコピーし、quietStartup=false、名前をbridge-reload-verificationとする。
+追加のslash-observerは不要で、モデルへのプロンプトもHTTPモデルfixtureサーバーも必要ない。
+profileId、fixturePane、fixtureSessionIdを明示し、通常の実行ではBridgeの/reload、nativeInput=trueでは専用端末へ/reloadとEnterを送る。
+後者はPC側の入力と同じnativeコマンド経路を確認するための試験である。
+どちらもリソースと完了表示、セッションID、user message数の維持を確認する。
+
+```bash
+adb -s "$SERIAL" shell am instrument -w -r \
+  -e class com.chun.pibridge.ReloadOutputDeviceTest \
+  -e profileId "$PROFILE_ID" -e fixturePane "$FIXTURE_PANE" \
+  -e fixtureSessionId "$FIXTURE_SESSION_ID" \
+  com.chun.pibridge.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+PC入力経路は上の引数へ`-e nativeInput true`を追加する。
+公開する試験コードに通常の会話のペインやセッションIDを埋め込まない。
+PCの全体checkには、relayの抽出、未確認と失敗、エディター境界、セッションとbridgeの切替を確認する試験も含む。
+
 ## fixtureと専用Pi
 
 ```bash
