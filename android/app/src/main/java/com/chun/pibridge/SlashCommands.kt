@@ -26,11 +26,17 @@ fun contextPercent(session: JSONObject?): String {
     return if (percent.isFinite() && percent >= 0) String.format(Locale.ROOT, "%.1f%%", percent) else "--%"
 }
 
+fun modelThinkingLabel(session: JSONObject?): String {
+    val model = (session?.opt("model") as? String)?.ifBlank { null } ?: return "同じPCセッション"
+    val level = (session.opt("thinkingLevel") as? String)?.trim()?.ifBlank { null }
+    return if (level == null) model else "$model ($level)"
+}
+
 @Composable
 fun ModelContextLabel(session: JSONObject?) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text((session?.opt("model") as? String)?.ifBlank { null } ?: "同じPCセッション",
-            Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelSmall,
+        Text(modelThinkingLabel(session),
+            Modifier.testTag("modelThinkingLabel").weight(1f, fill = false), style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         val percent = contextPercent(session)
         Text(percent, Modifier.testTag("contextUsage").semantics { contentDescription = "コンテキスト使用率 $percent" },

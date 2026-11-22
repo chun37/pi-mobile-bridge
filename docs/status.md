@@ -1,5 +1,27 @@
 # 実機検証結果
 
+## モデル名の後の思考レベル
+
+2026年11月23日、チャット画面のモデル名を`モデル名 (high)`の形式に変更した。
+SDKの現在のthinkingLevelを使い、offも表示する。
+旧拡張などでレベルが取得できない場合は括弧を出さない。
+コンテキスト使用率の表示は維持した。
+
+本人の指定で`/home/chun/playground/pi-mobile-bridge-thinking`のworktreeと`feat/android-thinking-label`ブランチで開発した。
+全体check、Android単体105件、extension37件、Go raceとvet、lint、APK作成が成功した。
+実機SlashCommandsUiTestは5件が成功し、highからoffへの変更、モデル変更、旧メタデータへの切り替えを確認した。
+通常の会話への試験送信やreloadは行っていない。
+Android APKは上書き導入済みだが、mainへの統合とPC側の導入は未実施である。
+通常チャットでレベルを表示するにはPC側へ新拡張とrelayを導入した後、本人が対象Piで/reloadし、Bridgeを再接続する必要がある。
+
+APKのSHA-256は次のとおり。
+
+```text
+383cbb9a1e3465e6965566a5a4597066703a30b7fae80902da4cccb06dff5e3d
+```
+
+証拠はworktree内のevidence/thinking-label-20261123/とevidence/*-check.logにある。
+
 ## 実行状態の一本化
 
 2026年11月23日、Piのイベントと原子的なスナップショットをReducerへ集約し、単一のSessionUiStateから表示と操作可否を決める構成へ変更した。

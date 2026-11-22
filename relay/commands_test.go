@@ -23,7 +23,7 @@ func TestCommandCatalogAndContextMetadata(t *testing.T) {
 	socket := fakeSocket(t, "commands.sock", func(q obj) obj {
 		switch q["method"] {
 		case "info":
-			return obj{"result": obj{"paneId": "w1:p1", "sessionId": "a", "model": "fixture", "idle": true,
+			return obj{"result": obj{"paneId": "w1:p1", "sessionId": "a", "model": "fixture", "thinkingLevel": "high", "idle": true,
 				"contextUsage": obj{"tokens": 12345, "contextWindow": 100000, "percent": 12.345},
 				"capabilities": []any{"slashCommands", "contextUsage"}}}
 		case "commands":
@@ -36,6 +36,9 @@ func TestCommandCatalogAndContextMetadata(t *testing.T) {
 	r.dir = filepath.Dir(socket)
 	r.discover()
 	if object(r.sessions["w1:p1"]["contextUsage"])["percent"] != 12.345 {
+		t.Fatal(r.sessions)
+	}
+	if r.sessions["w1:p1"]["thinkingLevel"] != "high" {
 		t.Fatal(r.sessions)
 	}
 	if len(array(r.sessions["w1:p1"]["capabilities"])) != 2 {

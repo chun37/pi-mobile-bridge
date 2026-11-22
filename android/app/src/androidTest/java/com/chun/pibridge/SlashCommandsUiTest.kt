@@ -65,6 +65,18 @@ class SlashCommandsUiTest {
         ui.runOnIdle { session = JSONObject(session.toString()).put("contextUsage", JSONObject().put("percent", 0)) }
         ui.onNodeWithTag("contextUsage").assertTextEquals("0.0%")
     }
+    @Test fun modelThinkingLevelUpdatesAndDisappearsForLegacyMetadata() {
+        var session by mutableStateOf(JSONObject().put("model", "test-model").put("thinkingLevel", "high"))
+        ui.setContent { MaterialTheme { Box(Modifier.padding(top = 48.dp)) { ModelContextLabel(session) } } }
+        ui.onNodeWithTag("modelThinkingLabel").assertIsDisplayed().assertTextEquals("test-model (high)")
+        ui.runOnIdle { session = JSONObject(session.toString()).put("thinkingLevel", "off") }
+        ui.onNodeWithTag("modelThinkingLabel").assertTextEquals("test-model (off)")
+        ui.runOnIdle { session = JSONObject(session.toString()).put("model", "other-model").put("thinkingLevel", "low") }
+        ui.onNodeWithTag("modelThinkingLabel").assertTextEquals("other-model (low)")
+        ui.runOnIdle { session = JSONObject().put("model", "legacy-model") }
+        ui.onNodeWithTag("modelThinkingLabel").assertTextEquals("legacy-model")
+        ui.onNodeWithTag("contextUsage").assertTextEquals("--%")
+    }
     @Test fun loadingAndOldExtensionHaveExplicitMessages() {
         var loading by mutableStateOf(true)
         var error by mutableStateOf("")

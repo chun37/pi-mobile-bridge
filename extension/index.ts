@@ -13,7 +13,7 @@ import { commandCatalog, contextUsage, modelCatalog, RELOAD_COMMAND, runSlashCom
 
 import { ExecutionState } from "./execution.ts";
 
-export const VERSION = "0.3.0";
+export const VERSION = "0.3.1";
 export const MAX_FRAME = 24 * 1024 * 1024;
 type WireEntry = {
   entryId: string;
@@ -118,6 +118,7 @@ export default function bridge(pi: ExtensionAPI) {
       sessionName: sm.getSessionName(),
       cwd: ctx!.cwd,
       model: ctx!.model?.id,
+      thinkingLevel: pi.getThinkingLevel(),
       contextUsage: contextUsage(ctx!),
       capabilities: ["slashCommands", "contextUsage", "executionState"],
       idle: ctx!.isIdle(),
@@ -443,6 +444,7 @@ export default function bridge(pi: ExtensionAPI) {
     "agent_settled",
     "session_info_changed",
     "model_select",
+    "thinking_level_select",
     "session_compact",
     "session_tree",
     "ui_prompt_start",

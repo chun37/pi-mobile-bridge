@@ -144,7 +144,7 @@ func (r *relay) discover() {
 		b, ok := bridges[id]
 		s := obj{"sessionKey": id, "paneId": id, "workspace": ws[str(p["workspace_id"])], "workspaceId": p["workspace_id"], "tabId": p["tab_id"], "tab": tabs[str(p["tab_id"])], "state": p["agent_status"], "agent": p["agent"], "bridge": ok, "cwd": p["cwd"]}
 		if ok {
-			for _, k := range []string{"sessionId", "sessionName", "cwd", "model", "lastEntryId", "lastResponse", "contextUsage", "capabilities", "instanceId", "execution"} {
+			for _, k := range []string{"sessionId", "sessionName", "cwd", "model", "thinkingLevel", "lastEntryId", "lastResponse", "contextUsage", "capabilities", "instanceId", "execution"} {
 				s[k] = b.info[k]
 			}
 			s["lastActivityAt"] = sessionActivity(b.info)
