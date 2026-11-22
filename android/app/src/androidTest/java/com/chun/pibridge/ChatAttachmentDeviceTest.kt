@@ -62,14 +62,14 @@ class ChatAttachmentDeviceTest {
                 MaterialTheme { Column(Modifier.fillMaxSize()) { ChatScreen(BridgeStore.get(context),state) } }
             } }
             ui.onNodeWithTag("messageInput").performTextInput("本文は残す")
-            for (count in 1..3) {
-                ui.onNodeWithTag("attachImage").performClick()
-                ui.waitUntil(10000) { ui.onAllNodesWithTag("attachmentCount").fetchSemanticsNodes().firstOrNull()
-                    ?.config?.getOrNull(SemanticsProperties.Text)?.joinToString("") == "画像 $count" }
-            }
             val removeMatcher = SemanticsMatcher("attachment remove button") {
                 it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("attachmentRemove:") == true
             }
+            for (count in 1..3) {
+                ui.onNodeWithTag("attachImage").performClick()
+                ui.waitUntil(10000) { ui.onAllNodes(removeMatcher).fetchSemanticsNodes().size == count }
+            }
+            ui.onNodeWithTag("attachmentCount").assertDoesNotExist()
             val buttons = ui.onAllNodes(removeMatcher).fetchSemanticsNodes().sortedBy { it.boundsInRoot.left }
             assertEquals(3,buttons.size)
             val tags = buttons.map { it.config[SemanticsProperties.TestTag] }
@@ -79,7 +79,7 @@ class ChatAttachmentDeviceTest {
                 ui.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)
             }
             ui.onNodeWithTag(tags[1]).performClick()
-            ui.onNodeWithTag("attachmentCount").assertTextEquals("画像 2")
+            ui.onAllNodes(removeMatcher).assertCountEquals(2)
             ui.onNodeWithTag(tags[0]).assertExists(); ui.onNodeWithTag(tags[2]).assertExists()
             ui.onNodeWithTag("messageInput").assertTextContains("本文は残す")
             ui.onNodeWithTag("send").assertIsNotEnabled()

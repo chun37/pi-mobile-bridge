@@ -75,7 +75,7 @@ class PhotoPickerDeviceTest {
                 .wait(Until.findObject(By.pkg("com.google.android.photopicker").text("完了")), 3000)
                 ?.click()
             ui.waitUntil(15000) {
-                runCatching { ui.onAllNodesWithText("画像 1").fetchSemanticsNodes().isNotEmpty() }
+                runCatching { ui.onAllNodesWithTag("attachmentStrip").fetchSemanticsNodes().isNotEmpty() }
                     .getOrDefault(false)
             }
             val message = "PHOTO_PICKER_DEVICE_MESSAGE $created"
