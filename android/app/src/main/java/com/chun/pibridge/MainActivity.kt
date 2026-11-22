@@ -1085,15 +1085,11 @@ fun ColumnScope.ChatScreen(store: BridgeStore, state: BridgeState) {
             )
             ModelContextLabel(session)
         }
-        TextButton(onClick = { terminal = !terminal }) {
-            Icon(
-                if (terminal) Icons.Default.ChatBubbleOutline else Icons.Default.Terminal,
-                null,
-                Modifier.size(18.dp),
-            )
-            Spacer(Modifier.width(5.dp))
-            Text(if (terminal) "チャット" else "ターミナル")
-        }
+        TerminalDebugButton(
+            terminal = terminal, profileId = state.profileId, connected = state.connected,
+            endpoint = state.endpoint, hello = state.connectionInfo, session = session,
+            onToggle = { terminal = !terminal }, load = store::sessionDebug,
+        )
     }
     if (terminal) {
         Surface(

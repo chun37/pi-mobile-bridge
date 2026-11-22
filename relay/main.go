@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 const maxFrame = 24 * 1024 * 1024
 
 type obj = map[string]any
@@ -349,7 +349,7 @@ func (r *relay) handle(req obj) (any, error) {
 		for _, b := range r.bridges {
 			bridgeVersions = append(bridgeVersions, b.info["bridgeVersion"])
 		}
-		return obj{"protocol": 1, "relayVersion": version, "herdrVersion": r.herdrVersion, "herdrProtocol": r.herdrProtocol, "bridgeVersion": version, "bridgeVersions": bridgeVersions, "capabilities": []any{"sessionTerminate"}}, nil
+		return obj{"protocol": 1, "relayVersion": version, "herdrVersion": r.herdrVersion, "herdrProtocol": r.herdrProtocol, "bridgeVersion": version, "bridgeVersions": bridgeVersions, "capabilities": []any{"sessionTerminate", "sessionDebug"}, "relayRuntime": relayRuntime()}, nil
 	case "ping":
 		return obj{"pong": true}, nil
 	case "workspaces.list":
@@ -381,6 +381,8 @@ func (r *relay) handle(req obj) (any, error) {
 		}
 		r.mu.Unlock()
 		return obj{"closed": true}, nil
+	case "session.debug":
+		return r.sessionDebug(p)
 	case "session.reloadOutput":
 		return r.reloadOutput(key, str(p["expectedSessionId"]))
 	case "session.commands":

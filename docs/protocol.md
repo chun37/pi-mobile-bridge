@@ -16,6 +16,7 @@ U+2028、U+2029は区切りにしません。
 
 helloの結果には、herdrVersion、herdrProtocol、bridgeVersions、capabilitiesも含みます。
 セッション終了に対応するrelayはcapabilitiesに`sessionTerminate`を返します。
+詳細デバッグ情報に対応するrelay 0.2.0は`sessionDebug`も返し、helloにrelayRuntimeを含みます。
 SSH stdoutはJSONL専用です。
 relayは診断メッセージをstdoutへ混ぜません。
 
@@ -32,6 +33,7 @@ relayは診断メッセージをstdoutへ混ぜません。
 | `session.close` | `sessionKey` | `closed: true`（購読終了のみ） |
 | `session.terminate` | `sessionKey`, `expectedSessionId`, `expectedInstanceId`, `expectedTabId` | 確認済みのPi paneを終了し`closed: true` |
 | `session.commands` | `sessionKey` | `commands`, `models`, `thinkingLevels` |
+| `session.debug` | `sessionKey`, `expectedSessionId`, `expectedInstanceId` | 実行中relay、Herdr、対象Piのバージョンと識別情報 |
 | `session.reloadOutput` | `sessionKey`, `expectedSessionId` | `sessionId`, `instanceId`, `phase`, `text` |
 | `session.send` | `sessionKey`, `text`, 任意の`images`, `deliverAs`, `clientMsgId`, `expectedSessionId` | `accepted`, `clientMsgId`, `status`, コマンドでは`message` |
 | `session.abort` | `sessionKey`, 任意の`expectedSessionId` | 中断要求の結果 |
@@ -141,6 +143,26 @@ Androidは最大6回、各要求1.5秒と250ms間隔で観測し、最後まで�
 結果を閉じると遅れて届いた応答も反映しません。
 結果はメモリ上の表示専用で、通常の会話、モデルの入力、キャッシュへ追加しません。
 切断中や別の会話を開いている間の過去の再読み込み結果は収集しません。
+
+## ターミナルボタンの長押しによるデバッグ画面
+
+通常のタップはチャットとターミナルの切り替えを維持し、長押しだけでデバッグ画面を開きます。
+画面を開くときと再取得ボタンを押すときだけ読み取り専用のsession.debugを呼び、ポーリングしません。
+接続先、選択セッション、拡張世代が変わった場合は画面を閉じ、取得中の旧応答も破棄します。
+切断中や旧relayでもアプリ版と接続時のhello情報は表示でき、取得できない値を未取得として扱います。
+
+relayは対象Bridgeのinfo、Herdrのsnapshot、再度infoの順に読み、sessionIdとinstanceIdを照合します。
+返信はcollectedAt、relay、herdr、bridge、sessionの許可したフィールドだけで構成します。
+relayには稼働中プロセスの版、PID、Go、OS、CPU、ホスト名、起動時刻、ビルドコミット、ビルド時の未コミット変更有無を含めます。
+Linuxでは/proc/self/exeのリンクで、稼働中の実行ファイルが置換または削除済みかも示します。
+配置されたファイルの版と、接続中プロセスの版を同一視しません。
+
+Pi拡張0.3.2のinfo.runtimeは、ホストSDKがexportするVERSIONと、process.version、process.platform、process.archを返します。
+SDK開発依存のpackage.jsonや別プロセスのpi --versionから、対象Piの版を推測しません。
+古い拡張はruntimeを返さないため、未取得と表示し、必要なら対象Piの処理終了後に本人が/reloadします。
+Bridge画面を開くためだけにreloadする必要はありません。
+任意のコマンド、環境変数、認証情報、会話本文、sessionFileをデバッグ返信やコピー文面へ含めません。
+画面のコピー操作は明示的に行い、接続先とセッションIDが含まれることを案内します。
 
 ## 長押しによるセッションの終了
 

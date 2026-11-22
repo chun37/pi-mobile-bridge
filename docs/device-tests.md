@@ -83,6 +83,17 @@ DBを消したりスキーマを変更したりしません。
 試験後は元の並び替え方式へ戻し、一覧画面にします。
 スクリーンショットは `files/recent-sessions.png`、本文を含まない比較情報は `files/session-order-proof.json` に保存します。
 
+## 接続先のデバッグ情報の試験
+
+DebugInfoUiTestは通常タップと長押しの分離、バージョン表示、明示的な再取得、旧relay、切断、取得失敗、PC変更、拡張reload、取得中に閉じた後の遅延応答を確認します。
+DebugInfoTestはコピー文面の許可リスト、nullや不正値の未取得表示、接続時情報と実行中情報の区別を確認します。
+DebugInfoDeviceTestにはprofileIdとworkspaceIdを明示します。
+試験自身が新しいPiを作成し、実際のChatScreenのターミナルボタンで長押ししてPi版とNode版を確認します。
+通常タップでターミナルへ切り替わることと、モデルへのuser messageが0件のままなことも確認します。
+新しい拡張0.3.2を読み込むため、main更新後に新規Piを使います。
+通常の会話へreloadやプロンプトは送らず、最後に自分が作ったPiだけを終了します。
+途中の所有IDと成功結果はfiles/debug-info-device-proof.jsonに保存します。
+
 ## 長押しによるセッション終了の試験
 
 SessionTerminationUiTestは通常タップ、長押し、キャンセル、確定、オフライン、旧relay、対象変更、PC変更、二重送信防止、結果不明時の非再送を確認します。

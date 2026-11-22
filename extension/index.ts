@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { randomUUID } from "node:crypto";
+import { VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -13,7 +14,7 @@ import { commandCatalog, contextUsage, modelCatalog, RELOAD_COMMAND, runSlashCom
 
 import { ExecutionState } from "./execution.ts";
 
-export const VERSION = "0.3.1";
+export const VERSION = "0.3.2";
 export const MAX_FRAME = 24 * 1024 * 1024;
 type WireEntry = {
   entryId: string;
@@ -128,6 +129,7 @@ export default function bridge(pi: ExtensionAPI) {
       startReason,
       instanceId,
       bridgeVersion: VERSION,
+      runtime: { piVersion: PI_VERSION, nodeVersion: process.version, platform: process.platform, arch: process.arch },
     };
   }
   function history(since?: string) {
