@@ -60,12 +60,13 @@ class DebugInfoDeviceTest {
             val runtime = proof!!.getJSONObject("bridge").getJSONObject("runtime")
             assertTrue(runtime.getString("piVersion").matches(Regex("\\d+\\.\\d+\\.\\d+.*")))
             assertTrue(runtime.getString("nodeVersion").startsWith("v"))
-            assertEquals("0.3.2", proof!!.getJSONObject("bridge").getString("bridgeVersion"))
+            assertEquals(BuildConfig.VERSION_NAME, proof!!.getJSONObject("bridge").getString("bridgeVersion"))
             assertEquals(store.state.value.connectionInfo?.optString("relayVersion"), proof!!.getJSONObject("relay").getString("version"))
             ui.onNodeWithTag("messageInput").assertIsDisplayed()
             ui.onNodeWithTag("terminalToggle").performTouchInput { longClick() }
             ui.onNodeWithTag("debugScreen").assertIsDisplayed()
             ui.waitUntil(15000) { ui.onAllNodesWithTag("debugLoading").fetchSemanticsNodes().isEmpty() }
+            ui.onNodeWithTag("debugRow:Bridgeリリース:稼働版の一致").performScrollTo().assertTextEquals("稼働版の一致: 一致")
             ui.onNodeWithTag("debugRow:選択中のPi（実行中）:Pi").performScrollTo()
                 .assertTextEquals("Pi: ${runtime.getString("piVersion")}")
             ui.onNodeWithTag("debugClose").performClick()
