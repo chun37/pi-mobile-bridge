@@ -87,6 +87,7 @@ type relay struct {
 	writeMu       sync.Mutex
 	eventMu       sync.Mutex
 	workers       sync.WaitGroup
+	terminateMu   sync.Mutex
 	discoverMu    sync.Mutex
 	bridges       map[string]bridge
 	sessions      map[string]obj
@@ -348,13 +349,15 @@ func (r *relay) handle(req obj) (any, error) {
 		for _, b := range r.bridges {
 			bridgeVersions = append(bridgeVersions, b.info["bridgeVersion"])
 		}
-		return obj{"protocol": 1, "relayVersion": version, "herdrVersion": r.herdrVersion, "herdrProtocol": r.herdrProtocol, "bridgeVersion": version, "bridgeVersions": bridgeVersions}, nil
+		return obj{"protocol": 1, "relayVersion": version, "herdrVersion": r.herdrVersion, "herdrProtocol": r.herdrProtocol, "bridgeVersion": version, "bridgeVersions": bridgeVersions, "capabilities": []any{"sessionTerminate"}}, nil
 	case "ping":
 		return obj{"pong": true}, nil
 	case "workspaces.list":
 		return r.listWorkspaces()
 	case "session.create":
 		return r.createSession(p)
+	case "session.terminate":
+		return r.terminateSession(p)
 	case "sessions.list":
 		r.discover()
 		r.mu.Lock()

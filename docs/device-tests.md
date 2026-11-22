@@ -83,6 +83,21 @@ DBを消したりスキーマを変更したりしません。
 試験後は元の並び替え方式へ戻し、一覧画面にします。
 スクリーンショットは `files/recent-sessions.png`、本文を含まない比較情報は `files/session-order-proof.json` に保存します。
 
+## 長押しによるセッション終了の試験
+
+SessionTerminationUiTestは通常タップ、長押し、キャンセル、確定、オフライン、旧relay、対象変更、PC変更、二重送信防止、結果不明時の非再送を確認します。
+SessionTerminationDeviceTestは明示的なprofileIdとworkspaceIdで新しいPiを一つ作り、その行でキャンセル後に終了を確定します。
+既存paneを引数で受け取ることはなく、自分で作成した対象しか終了しません。
+モデルへのプロンプトは送りません。
+作成直後の所有IDと終了後の結果をfiles/session-termination-device-proof.jsonに記録します。
+失敗時はこのファイルの作成済みIDを読み取り専用で確認してから、テストが作成したpaneだけを片付けます。
+
+scripts/test-session-termination.pyは実Herdrに新しいPiを二つ作り、一方は同じtabに追加したpaneを残し、もう一方は空のtabも消えることを確認します。
+PiのPID消失と、既存の履歴ファイルがあればその保持を確認します。
+空のPiは最初のメッセージまでsessionFileを作らないことがあるため、ファイルがなかった場合は履歴保持の実機確認とは数えません。
+実行にはHERDR_ENV=1、明示的な--workspace、--relay、--allow-create-closeが必要です。
+モデルへのプロンプトは送らず、失敗時も作成したpane以外は閉じません。
+
 ## 新しいタブの作成と表示の試験
 
 `NewSessionUiTest`はfixtureなしで「＋」、明示的な確認、作成先の選択、同じIDでの再確認、未接続時の抑止を試験します。
