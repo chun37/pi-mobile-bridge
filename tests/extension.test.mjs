@@ -12,12 +12,15 @@ process.env.HOME = testHome;
 const handlers = new Map();
 const entries = [];
 let idle = true;
+let thinkingLevel = "high";
 let aborts = 0;
 let sent = [];
 const dir = path.join(os.homedir(), ".pi/agent/bridge");
 const socket = path.join(dir, `${process.pid}.sock`);
 const pi = {
   registerCommand: () => {},
+  getThinkingLevel: () => thinkingLevel,
+  setThinkingLevel: level => { thinkingLevel = level; },
   getCommands: () => [{ name: "fixture", description: "Local extension", source: "extension" }],
   on: (n, f) => {
     if (!handlers.has(n)) handlers.set(n, []);
@@ -103,6 +106,22 @@ test("secure socket and metadata", async () => {
   assert.equal(p.result.model, "test-model");
   assert.equal(p.result.contextUsage.percent, 12.345);
   assert.ok(p.result.capabilities.includes("slashCommands"));
+});
+test("info and history expose the current thinking level, including off", async () => {
+  try {
+    for (const level of ["off", "minimal", "low", "medium", "high", "xhigh", "max"]) {
+      thinkingLevel = level;
+      assert.equal((await req("info")).result.thinkingLevel, level);
+      assert.equal((await req("history")).result.info.thinkingLevel, level);
+    }
+    const response = await req("send", { text: "/thinking low", clientMsgId: "thinking-label" });
+    assert.equal(response.result.status, "command");
+    assert.equal((await req("info")).result.thinkingLevel, "low");
+    await req("subscribe");
+    await emit("thinking_level_select", { level: "low", previousLevel: "high" });
+    await req("info");
+    assert.equal(events.at(-1).event, "thinking_level_select");
+  } finally { thinkingLevel = "high"; }
 });
 test("history excludes system and handles unknown cursor", async () => {
   entries.push(

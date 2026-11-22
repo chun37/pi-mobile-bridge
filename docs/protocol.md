@@ -88,6 +88,13 @@ infoのcontextUsageは`tokens`、`contextWindow`、`percent`を持ち、使用�
 PiのgetContextUsage()を使い、Androidではpercentを小数1桁で表示します。
 モデル名が長い場合にも使用率の表示幅を確保します。
 
+Pi拡張0.3.1はinfoに`thinkingLevel`を追加します。
+値はSDKのgetThinkingLevel()で取得し、relayがsessions.listとsessions.changedにも転送します。
+Androidのチャット画面は`モデル名 (high)`の形式で表示し、`off`も省略しません。
+フィールドが欠落、null、空白、文字列以外の場合は括弧を表示しません。
+thinking_level_selectも詳細イベントとして転送し、一覧メタデータは既存の定期取得で更新します。
+既存のPiは新拡張を読み込むために本人による/reloadが必要です。
+
 session.commandsはPiのgetCommands()から名前、説明、sourceだけを取得します。
 sourceInfoなどにあるローカルパスは候補として転送しません。
 利用可能なモデルの候補も認証情報を含まない値だけに限定します。

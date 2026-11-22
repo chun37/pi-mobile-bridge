@@ -49,6 +49,21 @@ class SlashCommandsTest {
         val overridden = JSONObject("""{"commands":[{"name":"model","source":"extension"}],"models":[{"value":"wrong"}]}""")
         assertTrue(slashOptions(input("/model "), overridden).isEmpty())
     }
+    @Test fun modelLabelShowsEveryThinkingLevelIncludingOff() {
+        for (level in listOf("off", "minimal", "low", "medium", "high", "xhigh", "max"))
+            assertEquals("test-model ($level)", modelThinkingLabel(JSONObject().put("model", "test-model").put("thinkingLevel", level)))
+    }
+    @Test fun missingOrInvalidLevelNeverInventsASetting() {
+        for (value in listOf(JSONObject.NULL, "", "   ", 42, false, JSONObject()))
+            assertEquals("test-model", modelThinkingLabel(JSONObject().put("model", "test-model").put("thinkingLevel", value)))
+        assertEquals("test-model", modelThinkingLabel(JSONObject().put("model", "test-model")))
+        assertEquals("test-model (high)", modelThinkingLabel(JSONObject().put("model", "test-model").put("thinkingLevel", " high ")))
+    }
+    @Test fun missingModelKeepsSessionFallbackWithoutDanglingLevel() {
+        assertEquals("同じPCセッション", modelThinkingLabel(null))
+        for (value in listOf(JSONObject.NULL, "", "  ", 42))
+            assertEquals("同じPCセッション", modelThinkingLabel(JSONObject().put("model", value).put("thinkingLevel", "high")))
+    }
     @Test fun contextUsageIsRealAndUnknownDoesNotBecomeZero() {
         assertEquals("12.3%", contextPercent(JSONObject("""{"contextUsage":{"percent":12.345}}""")))
         assertEquals("0.0%", contextPercent(JSONObject("""{"contextUsage":{"percent":0}}""")))
