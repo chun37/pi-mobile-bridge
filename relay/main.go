@@ -31,6 +31,15 @@ func object(v any) obj {
 	}
 	return a
 }
+
+// Keep the server error code separate from its human-readable message so that
+// callers can distinguish a rejected operation from an unknown transport outcome.
+type rpcError struct {
+	code, message string
+}
+
+func (e *rpcError) Error() string { return fmt.Sprintf("%s: %s", e.code, e.message) }
+
 func dial(socket string) (net.Conn, error) { return net.DialTimeout("unix", socket, 2*time.Second) }
 func rpc(socket, method string, params obj) (obj, error) {
 	return rpcWithTimeout(socket, method, params, 8*time.Second)
@@ -56,7 +65,7 @@ func rpcWithTimeout(socket, method string, params obj, timeout time.Duration) (o
 			continue
 		}
 		if er := object(r["error"]); len(er) > 0 {
-			return nil, fmt.Errorf("%s: %s", str(er["code"]), str(er["message"]))
+			return nil, &rpcError{code: str(er["code"]), message: str(er["message"])}
 		}
 		return object(r["result"]), nil
 	}

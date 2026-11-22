@@ -12,7 +12,7 @@ import (
 
 const testCreationID = "01234567-89ab-4cde-8fab-0123456789ab"
 
-func creationFixture(t *testing.T, startFails, tabFails bool) (*relay, *int, *int, *sync.Mutex) {
+func creationFixture(t *testing.T, startFails, tabFails bool, busyAttempts ...int) (*relay, *int, *int, *sync.Mutex) {
 	t.Helper()
 	var mu sync.Mutex
 	tabs, starts := 0, 0
@@ -45,6 +45,9 @@ func creationFixture(t *testing.T, startFails, tabFails bool) (*relay, *int, *in
 			}
 			if len(str(p["name"])) > 32 {
 				t.Error("invalid agent name")
+			}
+			if len(busyAttempts) > 0 && starts <= busyAttempts[0] {
+				return obj{"error": obj{"code": "agent_pane_busy", "message": "agent target pane w1:p9 is not an available shell"}}
 			}
 			if startFails {
 				return obj{"error": obj{"code": "agent_not_ready", "message": "startup blocked"}}

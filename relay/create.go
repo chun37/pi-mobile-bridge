@@ -93,10 +93,7 @@ func (r *relay) createSession(params obj) (obj, error) {
 	}
 	result := obj{"requestId": id, "workspaceId": workspace, "tabId": tab, "sessionKey": pane}
 	// No client-supplied command, argv, environment, shell text, or target pane.
-	_, startErr := rpcWithTimeout(r.herdr, "agent.start", obj{
-		"pane_id": pane, "kind": "pi", "name": "mobile-" + id[:24],
-		"args": []any{}, "timeout_ms": 20000,
-	}, 25*time.Second)
+	startErr := r.startCreatedPi(pane, id, 5*time.Second, 100*time.Millisecond)
 	result["started"] = startErr == nil
 	if startErr != nil {
 		result["startupError"] = startErr.Error()
@@ -126,6 +123,41 @@ func (r *relay) createSession(params obj) (obj, error) {
 	}
 	r.discover()
 	return result, nil
+}
+
+// tab.create returns before the new interactive shell is necessarily ready.
+// agent_pane_busy is a pre-start rejection: no command was submitted. Only that
+// explicit rejection may be retried, only in this newly created root pane.
+// Never retry timeouts, transport failures, or post-submission readiness errors.
+func (r *relay) startCreatedPi(pane, id string, wait, interval time.Duration) error {
+	deadline := time.Now().Add(wait)
+	for {
+		if err := r.ctx.Err(); err != nil {
+			return err
+		}
+		_, err := rpcWithTimeout(r.herdr, "agent.start", obj{
+			"pane_id": pane, "kind": "pi", "name": "mobile-" + id[:24],
+			"args": []any{}, "timeout_ms": 20000,
+		}, 25*time.Second)
+		var serverErr *rpcError
+		if !errors.As(err, &serverErr) || serverErr.code != "agent_pane_busy" {
+			return err
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return err
+		}
+		timer := time.NewTimer(min(interval, remaining))
+		select {
+		case <-r.ctx.Done():
+			timer.Stop()
+			return r.ctx.Err()
+		case <-timer.C:
+		}
+		if !time.Now().Before(deadline) {
+			return err
+		}
+	}
 }
 
 func recordedCreation(data []byte, workspace string) (obj, error) {
