@@ -15,6 +15,7 @@ U+2028、U+2029は区切りにしません。
 ```
 
 helloの結果には、herdrVersion、herdrProtocol、bridgeVersions、capabilitiesも含みます。
+セッション終了に対応するrelayはcapabilitiesに`sessionTerminate`を返します。
 SSH stdoutはJSONL専用です。
 relayは診断メッセージをstdoutへ混ぜません。
 
@@ -28,7 +29,8 @@ relayは診断メッセージをstdoutへ混ぜません。
 | `workspaces.list` | なし | `workspaces` 配列。各要素は`id`と`label` |
 | `session.create` | `workspaceId`, UUID形式の`requestId` | `tabId`, `sessionKey`, `started`, 任意の`startupError` |
 | `session.open` | `sessionKey`, 任意の`since` | `info`, `entries`, `leafId`, `seq`, `reset` |
-| `session.close` | `sessionKey` | `closed: true` |
+| `session.close` | `sessionKey` | `closed: true`（購読終了のみ） |
+| `session.terminate` | `sessionKey`, `expectedSessionId`, `expectedInstanceId`, `expectedTabId` | 確認済みのPi paneを終了し`closed: true` |
 | `session.commands` | `sessionKey` | `commands`, `models`, `thinkingLevels` |
 | `session.reloadOutput` | `sessionKey`, `expectedSessionId` | `sessionId`, `instanceId`, `phase`, `text` |
 | `session.send` | `sessionKey`, `text`, 任意の`images`, `deliverAs`, `clientMsgId`, `expectedSessionId` | `accepted`, `clientMsgId`, `status`, コマンドでは`message` |
@@ -140,6 +142,26 @@ Androidは最大6回、各要求1.5秒と250ms間隔で観測し、最後まで�
 結果はメモリ上の表示専用で、通常の会話、モデルの入力、キャッシュへ追加しません。
 切断中や別の会話を開いている間の過去の再読み込み結果は収集しません。
 
+## 長押しによるセッションの終了
+
+一覧の行を長押しすると、対象の名前、pane、tabと中断の注意を表示して確認します。
+キャンセルや通常のタップでは終了要求を送りません。
+確認したPC、sessionKey、sessionId、instanceId、tabIdを固定し、切断中や対象の変更時は終了できません。
+旧relayでは確認ボタンを無効にし、PC側の更新と再接続を案内します。
+
+relayは最新のHerdr snapshotでpaneとtabを照合し、Pi拡張のinfoでsessionIdとinstanceIdを再確認した後、指定したpaneへの`pane.close`を一度だけ呼びます。
+Herdrのエージェント検出がunknownでも、専用Bridge socketの同一性が一致すれば処理できます。
+既にpaneがなければ終了済みとして扱います。
+Herdrは最後のpaneを閉じると空のtabを取り除きます。
+relayから`tab.close`は呼ばないため、同じtabの他のpaneや、確認中に追加されたpaneを巻き込みません。
+実行中の処理と未送信入力は失われますが、保存済みの会話履歴やファイルを削除する処理はありません。
+
+終了の二重タップを抑止し、結果不明時の自動再送は行いません。
+エラー後はダイアログを閉じて一覧を確認します。
+Herdr 0.9.5のpane.closeにはsession identityを条件にする機能がないため、照合からpane.closeまでの間にPC側で同じpaneのPiが置き換わる競合は原子的には防げません。
+PCで対象を切り替える操作と同時に終了しないでください。
+従来の`session.close`はチャット購読終了だけであり、一覧への復帰や画面切り替えでPiを終了することはありません。
+
 ## 新しいタブとセッションの作成
 
 `session.create`は指定したワークスペースにフォーカスを移さず新しいタブを作り、返されたroot paneだけでPiを起動します。
@@ -193,6 +215,8 @@ relayはsocket以外のファイルや、現在のherdrSocketと一致しないb
 
 relay内部で使うherdrメソッドはsession.snapshot、events.subscribe、pane.read、pane.send_keys、pane.send_input、pane.report_metadataです。
 新規セッション作成に限りtab.createとagent.startを使い、起動先は今作成したタブのroot pane、kindはpi、追加引数は空に固定します。
+確認済みセッションの終了に限り、identityを照合した対象へのpane.closeを使います。
+任意のpane.closeやtab.closeをクライアントへ公開しません。
 pane.report_metadataはmobile接続の表示だけに使い、外部のRPCメソッドには公開しません。
 任意のherdrメソッド、server.stop、任意のシェル実行をAndroidへ公開しません。
 

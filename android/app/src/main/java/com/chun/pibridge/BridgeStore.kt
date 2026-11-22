@@ -27,6 +27,7 @@ data class BridgeState(
     val commandNotice: String = "",
     val reloadOutputs: Map<String, ReloadOutput> = emptyMap(),
     val sessionStates: Map<String, SessionUiState> = emptyMap(),
+    val canTerminateSession: Boolean = false,
 )
 
 class BridgeStore private constructor(val context: Context) {
@@ -172,6 +173,9 @@ class BridgeStore private constructor(val context: Context) {
                                     mutable.value.copy(
                                         status = "接続済み",
                                         connected = true,
+                                        canTerminateSession = hello.optJSONArray("capabilities")?.let { caps ->
+                                            (0 until caps.length()).any { caps.optString(it) == "sessionTerminate" }
+                                        } == true,
                                         error = "",
                                         offeredPin = "",
                                     )
@@ -270,6 +274,21 @@ class BridgeStore private constructor(val context: Context) {
         withContext(Dispatchers.IO) {
             db.cache().put(CacheRow(profile, "sessions", cached))
         }
+    }
+
+    suspend fun terminateSession(target: SessionTerminationTarget) {
+        val c = client ?: error("未接続")
+        val current = mutable.value
+        check(current.connected && current.canTerminateSession) { "PCへ再接続してください" }
+        check(current.profileId == target.profileId && current.sessions.any { target.matches(it) }) {
+            "対象のセッションが変わりました。一覧から確認し直してください"
+        }
+        val result = c.request("session.terminate", target.params(), timeoutMs = 15000)
+        check(result.optBoolean("closed")) { "終了結果を確認できませんでした。一覧を更新してください" }
+        if (client !== c || mutable.value.profileId != target.profileId) return
+        if (mutable.value.selected == target.sessionKey) select("")
+        applySessions(mutable.value.sessions.filterNot { target.matches(it) })
+        refreshOnMain()
     }
 
     suspend fun createSession(workspaceId: String, requestId: String) {

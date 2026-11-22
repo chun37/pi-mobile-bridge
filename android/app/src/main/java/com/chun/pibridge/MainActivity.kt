@@ -581,13 +581,13 @@ fun ColumnScope.SessionList(store: BridgeStore, state: BridgeState) {
                                 ?.textContent()
                                 ?.lineSequence()
                                 ?.firstOrNull() ?: s.optString("lastResponse")
-                        Surface(
-                            modifier =
-                                Modifier.fillMaxWidth()
-                                    .testTag("session:${s.optString("sessionKey")}"),
+                        SessionItemActions(
+                            session = s,
+                            profileId = state.profileId,
+                            connected = state.connected,
+                            supported = state.canTerminateSession,
+                            terminate = store::terminateSession,
                             onClick = { store.select(s.optString("sessionKey")) },
-                            shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .6f),
                         ) {
                             Column(
                                 Modifier.padding(16.dp),
