@@ -22,6 +22,7 @@ func diagnosticRelay(t *testing.T, mutate func(obj, int), malformed bool) *relay
 		reads++
 		info := obj{"paneId": "w1:p1", "sessionId": "s1", "instanceId": "i1", "bridgeVersion": "0.test", "pid": 1234,
 			"model": "test-model", "thinkingLevel": "high", "capabilities": []any{"executionState"},
+			"build":   obj{"revision": "loaded-commit", "modified": false, "token": "DO_NOT_LEAK"},
 			"runtime": obj{"piVersion": "9.8.7-running", "nodeVersion": "v99.1.0", "platform": "linux", "arch": "arm64", "token": "DO_NOT_LEAK"},
 			"token":   "DO_NOT_LEAK", "sessionFile": "/secret/path", "lastResponse": "DO_NOT_LEAK", "cwd": "/secret/cwd"}
 		if mutate != nil {
@@ -51,6 +52,9 @@ func TestDebugReportsRunningVersionsAndDoesNotLeakOtherInfo(t *testing.T) {
 	}
 	result := object(value)
 	if object(object(result["bridge"])["runtime"])["piVersion"] != "9.8.7-running" {
+		t.Fatal(result)
+	}
+	if object(object(result["bridge"])["build"])["revision"] != "loaded-commit" {
 		t.Fatal(result)
 	}
 	if object(result["herdr"])["version"] != "0.9.5-running" {

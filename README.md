@@ -5,6 +5,15 @@ PiをRPCモードへ置き換えず、PCのTUIとスマホが同じ会話を操�
 アイコンはπを橋に見立てたSOFT案を採用しています。
 原本とAndroid用リソースの再生成方法は `design/icon-concepts/README.md` にあります。
 
+## リリース番号
+
+Androidアプリ、PC relay、Bridge拡張は共通の0.4.0を使用します。
+番号の正本はrelease.jsonで、Androidは直接読み、GoとTypeScriptの定数およびnpmメタデータはscripts/sync-release.pyで同期します。
+細かい修正、ビルド、導入では番号を変更せず、ユーザーから明示的な指示があった場合だけリリース番号とAndroid versionCodeを更新します。
+通常の検証はpython3 scripts/sync-release.py --checkで、番号の自動更新はしません。
+同じ0.4.0内の差分は、デバッグ画面のビルドコミットまたは拡張ロード時コミットと未コミット変更の有無で識別します。
+Pi、Herdr、Node.js、Goなど外部ソフトウェアの版は別管理です。
+
 ## 構成
 
 | パス | 役割 |

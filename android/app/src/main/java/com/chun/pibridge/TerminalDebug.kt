@@ -84,6 +84,7 @@ fun TerminalDebugButton(
             val sections = debugSections(
                 "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}, ${BuildConfig.BUILD_TYPE})",
                 "${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}", connected, endpoint, hello, session, snapshot,
+                BuildConfig.VERSION_NAME, BuildConfig.BRIDGE_REVISION, BuildConfig.BRIDGE_SOURCE_STATE,
             )
             val clipboard = LocalClipboardManager.current
             Dialog(onDismissRequest = { showing = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {

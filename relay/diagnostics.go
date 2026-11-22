@@ -92,6 +92,7 @@ func (r *relay) sessionDebug(p obj) (obj, error) {
 		return nil, errors.New("debug_target_changed")
 	}
 	bridge := selectDebugFields(again, "bridgeVersion", "pid")
+	bridge["build"] = selectDebugFields(object(again["build"]), "revision", "modified")
 	bridge["runtime"] = selectDebugFields(object(again["runtime"]), "piVersion", "nodeVersion", "platform", "arch")
 	caps := []any{}
 	for _, v := range array(again["capabilities"]) {

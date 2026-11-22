@@ -17,7 +17,6 @@ import (
 	"time"
 )
 
-const version = "0.2.1"
 const maxFrame = 24 * 1024 * 1024
 
 type obj = map[string]any

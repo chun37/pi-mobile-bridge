@@ -108,7 +108,9 @@ test("secure socket and metadata", async () => {
   assert.equal(p.result.runtime.nodeVersion, process.version);
   assert.equal(p.result.runtime.platform, process.platform);
   assert.equal(p.result.runtime.arch, process.arch);
-  assert.equal(p.result.bridgeVersion, "0.3.2");
+  assert.equal(p.result.bridgeVersion, JSON.parse(fs.readFileSync(new URL("../release.json", import.meta.url), "utf8")).version);
+  assert.match(p.result.build.revision, /^[0-9a-f]{40,64}$/);
+  assert.equal(typeof p.result.build.modified, "boolean");
   assert.equal(p.result.contextUsage.percent, 12.345);
   assert.ok(p.result.capabilities.includes("slashCommands"));
 });

@@ -14,7 +14,10 @@ import { commandCatalog, contextUsage, modelCatalog, RELOAD_COMMAND, runSlashCom
 
 import { ExecutionState } from "./execution.ts";
 
-export const VERSION = "0.3.2";
+import { VERSION } from "./version.generated.ts";
+import { captureBuildInfo } from "./build-info.ts";
+export { VERSION };
+const BUILD_INFO = Object.freeze(captureBuildInfo(import.meta.url));
 export const MAX_FRAME = 24 * 1024 * 1024;
 type WireEntry = {
   entryId: string;
@@ -129,6 +132,7 @@ export default function bridge(pi: ExtensionAPI) {
       startReason,
       instanceId,
       bridgeVersion: VERSION,
+      build: BUILD_INFO,
       runtime: { piVersion: PI_VERSION, nodeVersion: process.version, platform: process.platform, arch: process.arch },
     };
   }
