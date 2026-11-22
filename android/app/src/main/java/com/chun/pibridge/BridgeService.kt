@@ -36,14 +36,8 @@ class BridgeService : Service() {
             )
         else startForeground(1, notification("SSH接続を準備中"))
         store.notifyState = { key, state ->
-            val n =
-                NotificationCompat.Builder(this, "agent")
-                    .setSmallIcon(android.R.drawable.stat_notify_chat)
-                    .setContentTitle("$key: $state")
-                    .setContentText(if (state == "blocked") "ターミナルで応答してください" else "応答が完了しました")
-                    .setContentIntent(openIntent())
-                    .setAutoCancel(true)
-                    .build()
+            val session = sessionForNotification(store.state.value.sessions, key)
+            val n = agentNotification(this, session, state, openIntent())
             runCatching { nm.notify(key.hashCode(), n) }
         }
         scope.launch { store.state.collect { nm.notify(1, notification(it.status)) } }
