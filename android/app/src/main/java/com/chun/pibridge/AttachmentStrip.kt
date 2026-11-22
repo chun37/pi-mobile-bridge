@@ -35,13 +35,10 @@ fun AttachmentStrip(images: List<DraftImage>, onRemove: (String) -> Unit, modifi
         previous = ids.toSet()
         if (added) state.animateScrollToItem(images.lastIndex)
     }
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("画像 ${images.size}", Modifier.testTag("attachmentCount"), style = MaterialTheme.typography.labelMedium)
-        LazyRow(state = state, modifier = Modifier.fillMaxWidth().testTag("attachmentStrip"),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            itemsIndexed(images, key = { _, image -> image.id }) { index, image ->
-                AttachmentThumbnail(image, index, onRemove)
-            }
+    LazyRow(state = state, modifier = modifier.fillMaxWidth().testTag("attachmentStrip"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        itemsIndexed(images, key = { _, image -> image.id }) { index, image ->
+            AttachmentThumbnail(image, index, onRemove)
         }
     }
 }

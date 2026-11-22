@@ -38,7 +38,8 @@ class AttachmentStripUiTest {
         assertTrue(a.left < b.left)
         val remove = ui.onNodeWithTag("attachmentRemove:a").fetchSemanticsNode().boundsInRoot
         assertTrue(remove.center.x > a.center.x); assertTrue(remove.center.y < a.center.y)
-        ui.onNodeWithTag("attachmentCount").assertTextEquals("画像 3")
+        ui.onNodeWithTag("attachmentCount").assertDoesNotExist()
+        ui.onNodeWithText("画像 3").assertDoesNotExist()
     }
     @Test fun removesOnlyTheMiddleThumbnail() {
         var images by mutableStateOf(listOf(image("a"), image("b"), image("c")))
@@ -54,7 +55,8 @@ class AttachmentStripUiTest {
         ui.setContent { MaterialTheme { AttachmentStrip(images, { images = removeDraftImage(images,it) }) } }
         ui.onNodeWithTag("attachmentRemove:a").performClick()
         ui.onNodeWithTag("attachment:b").assertExists()
-        ui.onNodeWithTag("attachmentCount").assertTextEquals("画像 1")
+        ui.onNodeWithTag("attachment:a").assertDoesNotExist()
+        ui.onNodeWithText("画像 1").assertDoesNotExist()
     }
     @Test fun removingTheLastPhotoHidesTheStrip() {
         var images by mutableStateOf(listOf(image("a")))
