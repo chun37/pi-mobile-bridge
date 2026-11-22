@@ -86,6 +86,7 @@ DBを消したりスキーマを変更したりしません。
 ## 接続先のデバッグ情報の試験
 
 DebugInfoUiTestは通常タップと長押しの分離、バージョン表示、明示的な再取得、旧relay、切断、取得失敗、PC変更、拡張reload、取得中に閉じた後の遅延応答を確認します。
+0.4.0では製品版の一致と混在の表示も検証し、外部のPi、Herdr、Nodeなどの番号を一致判定に含めません。
 DebugInfoTestはコピー文面の許可リスト、nullや不正値の未取得表示、接続時情報と実行中情報の区別を確認します。
 DebugInfoDeviceTestにはprofileIdとworkspaceIdを明示します。
 試験自身が新しいPiを作成し、実際のChatScreenのターミナルボタンで長押ししてPi版とNode版を確認します。
