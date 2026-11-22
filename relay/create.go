@@ -58,6 +58,10 @@ func (r *relay) createSession(params obj) (obj, error) {
 	if !found {
 		return nil, errors.New("unknown_workspace")
 	}
+	directory, err := r.workspaceDirectory(workspace)
+	if err != nil {
+		return nil, err
+	}
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if os.IsExist(err) {
 		data, readErr := os.ReadFile(path)
@@ -69,7 +73,7 @@ func (r *relay) createSession(params obj) (obj, error) {
 	if err != nil {
 		return nil, err
 	}
-	record := obj{"workspaceId": workspace, "requestId": id}
+	record := obj{"workspaceId": workspace, "requestId": id, "cwd": directory}
 	if err = json.NewEncoder(file).Encode(record); err == nil {
 		err = file.Sync()
 	}
@@ -81,7 +85,7 @@ func (r *relay) createSession(params obj) (obj, error) {
 		return nil, closeErr
 	}
 	created, err := rpc(r.herdr, "tab.create", obj{
-		"workspace_id": workspace, "label": "Pi " + id[:8], "focus": false,
+		"workspace_id": workspace, "label": "Pi " + id[:8], "focus": false, "cwd": directory,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creation_outcome_unknown: %w; do not create another tab blindly", err)
@@ -91,7 +95,7 @@ func (r *relay) createSession(params obj) (obj, error) {
 	if tab == "" || pane == "" {
 		return nil, errors.New("creation_outcome_unknown: tab response has no tab or root pane")
 	}
-	result := obj{"requestId": id, "workspaceId": workspace, "tabId": tab, "sessionKey": pane}
+	result := obj{"requestId": id, "workspaceId": workspace, "tabId": tab, "sessionKey": pane, "cwd": directory}
 	// No client-supplied command, argv, environment, shell text, or target pane.
 	startErr := r.startCreatedPi(pane, id, 5*time.Second, 100*time.Millisecond)
 	result["started"] = startErr == nil

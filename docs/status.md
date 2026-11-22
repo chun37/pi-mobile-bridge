@@ -1,5 +1,26 @@
 # 実機検証結果
 
+## 新規セッションの開始ディレクトリ
+
+2026年11月23日、本人からplaygroundへ新規作成するとartifacts/strix-erp配下になると申告された。
+relay 0.2.0がtab.createにcwdを渡さず、Herdrのfollow方針で選択中paneのcwdを引き継いでいたことが原因だった。
+relay 0.2.1で、workspace IDに対応するidentity_cwdを検証し、tab.createへ明示するよう修正した。
+ワークスペース名から推測したり、playgroundのパスをハードコードしたりはしない。
+開始先を解決できない場合はtabを作る前にエラーにし、選択中paneなどへ代替しない。
+
+PCでwV:pFを選択したまま旧版と修正版の専用Piを一つずつ作り、旧版が/home/chun/playground/artifacts/strix-erp-20261115、修正版が/home/chun/playgroundで始まることを確認した。
+修正後の実Piのcwdと作成結果のcwdは一致した。
+PCのフォーカスは試験前後ともwV:pFのままで、作成した試験paneだけを終了した。
+既存のセッション、cwd、ファイルは変更していない。
+
+これはPC relayだけの修正で、APKの再導入やPiの/reloadは不要である。
+旧relayとの接続が残る場合はAndroidからPC接続を切断して再接続する。
+既に作成済みのセッションのcwdを移動する変更ではない。
+状態ファイルは接続先socketと同じディレクトリのHerdr session.json、保存形式version 3を対象とする。
+未対応のHerdr保存形式や独自ファイル配置では、開始先が解決できないため新規作成を拒否する。
+
+証拠は開発worktree内のevidence/workspace-directory-20261123/にある。
+
 ## ターミナルボタンの長押しによるデバッグ画面
 
 2026年11月23日、チャット画面のターミナルボタンを長押しすると、接続先のデバッグ情報を表示するようにした。
