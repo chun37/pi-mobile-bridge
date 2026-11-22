@@ -1,5 +1,22 @@
 # Wire protocol 1
 
+## 共通リリース番号とビルド情報
+
+自作のAndroidアプリ、relay、Bridge拡張はrelease.jsonに定義した共通の0.4.0を使用する。
+番号は本人の明示的な指示がある場合だけ更新し、細かい修正で自動増分しない。
+Android versionCodeも同様に管理する。
+番号の一致はプロトコル互換性と同義ではなく、番号が違うだけで接続を拒否しない。
+
+Bridge infoにbuild.revisionとbuild.modifiedを追加した。
+これは拡張ロード時に一度だけ取得するソースGit情報で、デバッグ要求のたびに配置ファイルや最新コミットを読み直すものではない。
+固定引数のローカルGit照会はoptional locksを無効にし、タイムアウトと出力上限を設ける。
+Gitがない配置や、親の別リポジトリに属する配置では未取得とする。
+relayのsession.debugは許可した二つのbuildフィールドだけを転送する。
+
+Androidはビルド時のコミットとソース状態をBuildConfigへ埋め込む。
+デバッグ画面ではAndroid、稼働relay、選択中の拡張の版を比べ、一致、不一致、一部未取得、未接続を表示する。
+Pi、Herdr、Node、Goの固有バージョンはこの比較に含めない。
+
 ## Framing
 
 UTF-8のJSONオブジェクトをLFで区切ります。

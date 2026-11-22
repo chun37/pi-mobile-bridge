@@ -28,9 +28,18 @@ fun debugConnectionInfo(hello: JSONObject): JSONObject = JSONObject().apply {
     }.take(32)))
 }
 
+fun releaseAlignment(app: String, relay: Any?, extension: Any?, connected: Boolean): String {
+    if (!connected) return "未確認（未接続）"
+    val pattern = Regex("(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)")
+    val versions = listOf(app, relay, extension).map { (it as? String)?.takeIf(pattern::matches) }
+    if (versions.filterNotNull().distinct().size > 1) return "バージョン不一致（混在）"
+    return if (versions.any { it == null }) "未確認（一部未取得）" else "一致"
+}
+
 fun debugSections(
     appVersion: String, androidVersion: String, connected: Boolean, endpoint: String,
     hello: JSONObject?, session: JSONObject?, snapshot: JSONObject?,
+    appRelease: String = appVersion.substringBefore(" "), appRevision: String? = null, appSourceState: String? = null,
 ): List<DebugSection> {
     val relay = snapshot?.optJSONObject("relay")
     val herdr = snapshot?.optJSONObject("herdr")
@@ -39,7 +48,11 @@ fun debugSections(
     val remoteSession = snapshot?.optJSONObject("session")
     fun row(label: String, value: Any?) = label to debugValue(value)
     return listOf(
-        DebugSection("Androidアプリ", listOf(row("アプリ", appVersion), row("Android", androidVersion))),
+        DebugSection("Bridgeリリース", listOf(row("共通リリース", appRelease),
+            row("稼働版の一致", releaseAlignment(appRelease, relay?.opt("version") ?: hello?.opt("relayVersion"), bridge?.opt("bridgeVersion"), connected)))),
+        DebugSection("Androidアプリ", listOf(row("アプリ", appVersion), row("Android", androidVersion),
+            row("ビルドコミット", appRevision?.takeUnless { it == "unknown" }),
+            row("未コミット変更を含むビルド", when (appSourceState) { "clean" -> false; "modified" -> true; else -> null }))),
         DebugSection("接続", listOf(row("状態", if (connected) "接続中" else "未接続（接続時の情報）"),
             row("接続先", endpoint), row("Bridgeプロトコル", hello?.opt("protocol")), row("取得日時", snapshot?.opt("collectedAt")))),
         DebugSection("PC relay（実行中）", listOf(
@@ -51,7 +64,10 @@ fun debugSections(
         DebugSection("Herdrサーバー", listOf(row("Herdr", herdr?.opt("version") ?: hello?.opt("herdrVersion")),
             row("Herdrプロトコル", herdr?.opt("protocol") ?: hello?.opt("herdrProtocol")))),
         DebugSection("選択中のPi（実行中）", listOf(row("Pi", runtime?.opt("piVersion")),
-            row("Bridge拡張", bridge?.opt("bridgeVersion")), row("Node.js", runtime?.opt("nodeVersion")),
+            row("Bridge拡張", bridge?.opt("bridgeVersion")),
+            row("拡張ロード時コミット", bridge?.optJSONObject("build")?.opt("revision")),
+            row("拡張ロード時の未コミット変更", bridge?.optJSONObject("build")?.opt("modified")),
+            row("Node.js", runtime?.opt("nodeVersion")),
             row("OS / CPU", runtime?.let { "${debugValue(it.opt("platform"))} / ${debugValue(it.opt("arch"))}" }),
             row("PID", bridge?.opt("pid")), row("モデル", remoteSession?.opt("model") ?: session?.opt("model")),
             row("thinking", remoteSession?.opt("thinkingLevel") ?: session?.opt("thinkingLevel")))),

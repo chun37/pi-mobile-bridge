@@ -1,8 +1,24 @@
+import java.util.concurrent.TimeUnit
+
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id("org.jetbrains.kotlin.kapt") }
+val bridgeRelease = groovy.json.JsonSlurper().parse(rootProject.file("../release.json")) as Map<*, *>
+fun bridgeGit(vararg args: String): String? = runCatching {
+    val process = ProcessBuilder(listOf("git", "--no-optional-locks", "-C", rootProject.projectDir.parentFile.absolutePath) + args)
+        .redirectError(ProcessBuilder.Redirect.DISCARD).start()
+    if (!process.waitFor(2, TimeUnit.SECONDS)) { process.destroyForcibly(); null }
+    else if (process.exitValue() != 0) null else process.inputStream.bufferedReader().use { it.readText().trim() }
+}.getOrNull()
+val bridgeRevision = bridgeGit("rev-parse", "--verify", "HEAD")?.takeIf { it.matches(Regex("[a-f0-9]{40,64}")) }
+val bridgeStatus = bridgeGit("status", "--porcelain")
+val bridgeSourceState = if (bridgeRevision == null || bridgeStatus == null) "unknown" else if (bridgeStatus.isEmpty()) "clean" else "modified"
 android {
     namespace = "com.chun.pibridge"
     compileSdk = 35
-    defaultConfig { applicationId = "com.chun.pibridge"; minSdk = 26; targetSdk = 35; versionCode = 3; versionName = "0.3.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
+    defaultConfig { applicationId = "com.chun.pibridge"; minSdk = 26; targetSdk = 35; versionCode = (bridgeRelease["androidVersionCode"] as Number).toInt(); versionName = bridgeRelease["version"] as String; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
+    defaultConfig {
+        buildConfigField("String", "BRIDGE_REVISION", "\"${bridgeRevision ?: "unknown"}\"")
+        buildConfigField("String", "BRIDGE_SOURCE_STATE", "\"$bridgeSourceState\"")
+    }
     buildFeatures { compose = true; buildConfig = true }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }

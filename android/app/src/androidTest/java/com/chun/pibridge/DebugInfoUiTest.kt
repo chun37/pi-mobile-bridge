@@ -46,6 +46,18 @@ class DebugInfoUiTest {
         ui.onNodeWithTag("debugClose").performClick()
         ui.onNodeWithTag("debugScreen").assertDoesNotExist()
     }
+    @Test fun mixedProductVersionsAreVisible() {
+        show(); open()
+        ui.onNodeWithTag("debugRow:Bridgeリリース:稼働版の一致").performScrollTo()
+            .assertTextEquals("稼働版の一致: バージョン不一致（混在）")
+    }
+    @Test fun matchingRuntimeVersionsOverrideOlderHelloAndIgnoreExternalVersions() {
+        show(load = { _,_,_ -> snapshot().apply {
+            getJSONObject("relay").put("version", BuildConfig.VERSION_NAME)
+            getJSONObject("bridge").put("bridgeVersion", BuildConfig.VERSION_NAME)
+        } }); open()
+        ui.onNodeWithTag("debugRow:Bridgeリリース:稼働版の一致").performScrollTo().assertTextEquals("稼働版の一致: 一致")
+    }
     @Test fun refreshIsExplicitAndNeverPolls() {
         var loads = 0
         show(load = { _,_,_ -> loads++; snapshot() })
