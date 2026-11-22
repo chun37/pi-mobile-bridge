@@ -1004,7 +1004,7 @@ fun ColumnScope.ChatScreen(store: BridgeStore, state: BridgeState) {
     var text by remember(key) { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue("")) }
     var terminalText by remember(key) { mutableStateOf("") }
     var delivery by remember { mutableStateOf("followUp") }
-    var images by remember(key) { mutableStateOf(emptyList<JSONObject>()) }
+    var images by remember(key) { mutableStateOf(emptyList<DraftImage>()) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
@@ -1055,7 +1055,7 @@ fun ColumnScope.ChatScreen(store: BridgeStore, state: BridgeState) {
                                         )
                                 }
                             require(images.size < 4) { "画像は4枚までです" }
-                            images = images + im
+                            images = images + DraftImage(im)
                         }
                         .onFailure { store.error(it) }
                 }
@@ -1204,21 +1204,7 @@ fun ColumnScope.ChatScreen(store: BridgeStore, state: BridgeState) {
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 RunActions(execution, delivery, { delivery = it }, { store.abort(key) })
-                if (images.isNotEmpty())
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Default.Image,
-                            null,
-                            Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                        Text(
-                            "画像 ${images.size}",
-                            Modifier.padding(horizontal = 8.dp).testTag("attachmentCount"),
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                        TextButton(onClick = { images = emptyList() }) { Text("添付解除") }
-                    }
+                AttachmentStrip(images, onRemove = { id -> images = removeDraftImage(images, id) })
                 if (state.commandNotice.isNotBlank()) Text(state.commandNotice,
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("commandNotice"))
                 SlashSuggestions(text, state.slashCatalog, state.slashLoading, state.slashError) {
@@ -1252,7 +1238,7 @@ fun ColumnScope.ChatScreen(store: BridgeStore, state: BridgeState) {
                     )
                     FilledIconButton(
                         onClick = {
-                            if (store.send(key, text.text, images, delivery)) {
+                            if (store.send(key, text.text, draftImagePayload(images), delivery)) {
                                 text = androidx.compose.ui.text.input.TextFieldValue("")
                                 images = emptyList()
                                 keyboard?.hide()
