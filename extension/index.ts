@@ -13,6 +13,7 @@ import type {
 import { commandCatalog, contextUsage, modelCatalog, RELOAD_COMMAND, runSlashCommand, THINKING_LEVELS } from "./commands.ts";
 
 import { ExecutionState } from "./execution.ts";
+import { cancelModelRefresh } from "./model-refresh.ts";
 
 import { VERSION } from "./version.generated.ts";
 import { captureBuildInfo } from "./build-info.ts";
@@ -197,9 +198,18 @@ export default function bridge(pi: ExtensionAPI) {
         case "info":
           result = info();
           break;
-        case "commands":
-          result = { commands: commandCatalog(pi), models: modelCatalog(ctx), thinkingLevels: THINKING_LEVELS };
+        case "commands": {
+          const context = ctx;
+          const sessionId = context.sessionManager.getSessionId();
+          const generation = instanceId;
+          if ((p.expectedSessionId != null && p.expectedSessionId !== sessionId) ||
+              (p.expectedInstanceId != null && p.expectedInstanceId !== generation)) throw new Error("session_changed");
+          const catalog = await modelCatalog(context);
+          if (!enabled || ctx?.sessionManager.getSessionId() !== sessionId || instanceId !== generation)
+            throw new Error("session_changed");
+          result = { commands: commandCatalog(pi), ...catalog, thinkingLevels: THINKING_LEVELS };
           break;
+        }
         case "history":
           result = history(p.since);
           break;
@@ -260,7 +270,10 @@ export default function bridge(pi: ExtensionAPI) {
               message: "前回のコマンド処理結果は未確認です。自動では再実行しません",
             } });
             if (accepted.size > 2048) accepted.delete(accepted.keys().next().value!);
-            result = { accepted: true, ...await runSlashCommand(pi, ctx, p.text), clientMsgId: p.clientMsgId };
+            const sessionId = ctx.sessionManager.getSessionId();
+            const generation = instanceId;
+            result = { accepted: true, ...await runSlashCommand(pi, ctx, p.text,
+              () => enabled && ctx?.sessionManager.getSessionId() === sessionId && instanceId === generation), clientMsgId: p.clientMsgId };
             accepted.set(p.clientMsgId, { fingerprint, result });
             break;
           }
@@ -310,6 +323,7 @@ export default function bridge(pi: ExtensionAPI) {
     }
   }
   async function cleanup() {
+    if (ctx) cancelModelRefresh(ctx.modelRegistry);
     enabled = false;
     for (const s of clients.keys()) s.destroy();
     clients.clear();

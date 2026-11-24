@@ -1010,8 +1010,9 @@ fun ColumnScope.ChatScreen(store: BridgeStore, state: BridgeState) {
     val keyboard = LocalSoftwareKeyboardController.current
     val execution = state.sessionUi(key)
     val working = execution.working
-    LaunchedEffect(key, state.connected, session?.optString("sessionId"), supportsSlash(session), text.text.startsWith("/"), state.slashCatalog) {
-        if (state.connected && text.text.startsWith("/") && state.slashCatalog == null) store.refreshCommands(key)
+    val catalogScope = slashCatalogScope(text.text)
+    LaunchedEffect(key, state.connected, session?.optString("sessionId"), session?.optString("instanceId"), supportsSlash(session), catalogScope) {
+        if (state.connected && catalogScope != null) store.refreshCommands(key)
     }
     val picker =
         rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -1207,7 +1208,8 @@ fun ColumnScope.ChatScreen(store: BridgeStore, state: BridgeState) {
                 AttachmentStrip(images, onRemove = { id -> images = removeDraftImage(images, id) })
                 if (state.commandNotice.isNotBlank()) Text(state.commandNotice,
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("commandNotice"))
-                SlashSuggestions(text, state.slashCatalog, state.slashLoading, state.slashError) {
+                SlashSuggestions(text, state.slashCatalog, state.slashLoading, state.slashError,
+                    onRefresh = { store.refreshCommands(key) }) {
                     text = completeSlash(text, it)
                 }
                 if (working && text.text.startsWith("/")) Text("実行の完了後にコマンドを送信できます",

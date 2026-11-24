@@ -40,6 +40,7 @@ class BridgeStore private constructor(val context: Context) {
     val state: StateFlow<BridgeState> = mutable.asStateFlow()
     private var client: BridgeClient? = null
     private var commandGeneration = 0L
+    private val catalogGate = CatalogRefreshGate()
     private var sessionMetadataVersion = 0L
     private var connection: Job? = null
     private val cacheJobs = mutableMapOf<String, Job>()
@@ -551,23 +552,35 @@ class BridgeStore private constructor(val context: Context) {
         val generation = commandGeneration
         val session = mutable.value.sessions.find { it.optString("sessionKey") == key }
         val sessionId = session?.optString("sessionId")
+        val instanceId = session?.optString("instanceId")
         fun current() = commandGeneration == generation && client === activeClient && mutable.value.profileId == profile &&
             mutable.value.selected == key && mutable.value.sessions.find {
-                it.optString("sessionKey") == key }?.optString("sessionId") == sessionId
-        if (!current() || mutable.value.slashLoading) return
+                it.optString("sessionKey") == key }?.let {
+                    it.optString("sessionId") == sessionId && it.optString("instanceId") == instanceId } == true
+        if (!current()) return
         if (!supportsSlash(session)) {
             mutable.value = mutable.value.copy(slashError = "PCのこのPiで /reload を1回実行してください")
             return
         }
+        val ticket = catalogGate.begin(CatalogTarget(activeClient, profile, generation, key, sessionId, instanceId)) ?: return
         mutable.value = mutable.value.copy(slashLoading = true, slashError = "")
         scope.launch {
             try {
-                val catalog = activeClient.request("session.commands", JSONObject().put("sessionKey", key))
-                if (current()) mutable.value = mutable.value.copy(slashCatalog = catalog, slashLoading = false)
+                val params = JSONObject().put("sessionKey", key)
+                    .putOpt("expectedSessionId", sessionId?.takeIf { it.isNotBlank() })
+                    .putOpt("expectedInstanceId", instanceId?.takeIf { it.isNotBlank() })
+                val catalog = activeClient.request("session.commands", params)
+                if (catalogGate.owns(ticket) && current()) mutable.value = mutable.value.copy(slashCatalog = catalog)
             } catch (e: CancellationException) { throw e
             } catch (_: Exception) {
-                if (current()) mutable.value = mutable.value.copy(slashLoading = false,
-                    slashError = "候補を取得できません。再接続して再試行してください")
+                if (catalogGate.owns(ticket) && current()) mutable.value = mutable.value.copy(
+                    slashError = "候補を更新できません。「再取得」で試してください")
+            } finally {
+                val finish = catalogGate.finish(ticket)
+                if (finish != CatalogRefreshGate.Finish.STALE && current()) {
+                    mutable.value = mutable.value.copy(slashLoading = false)
+                    if (finish == CatalogRefreshGate.Finish.FOLLOW_UP) refreshCommands(key)
+                }
             }
         }
     }

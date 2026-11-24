@@ -1,5 +1,23 @@
 # 実機試験の再実行
 
+## 新しいモデル候補の再取得
+
+LiveModelsDeviceTestにはprofileIdとworkspaceIdを明示します。
+専用Piを新規作成し、実ChatScreenの`/model glm`検索、再取得、補完、SDKのモデル変更を確認します。
+z.aiのGLMが設定済みであることが前提で、トークンの値を表示したり書き換えたりはしません。
+同じsessionIdとinstanceIdを保持したまま変更し、通常のuser messageが0件であることを確認します。
+モデルへの推論要求は送らず、自分で作ったペインだけを終了します。
+PCでの認証追加後の同一registry更新は、model-refresh.test.mjsの一時認証ファイルを使う実SDK試験で再現します。
+本人の認証ファイルに試験用キーを追加しません。
+
+```bash
+adb -s "$SERIAL" shell am instrument -w \\
+  -e class com.chun.pibridge.LiveModelsDeviceTest \\
+  -e profileId verification-pc -e workspaceId "$WORKSPACE" \\
+  com.chun.pibridge.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+
 ## 試験環境
 
 通常のユーザー会話へ試験メッセージを送らないため、専用のherdrペインを二つ使います。

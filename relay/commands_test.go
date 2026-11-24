@@ -6,6 +6,26 @@ import (
 	"testing"
 )
 
+func TestCatalogForwardsExpectedSessionAndInstance(t *testing.T) {
+	r := fixture(t)
+	socket := fakeSocket(t, "identity.sock", func(q obj) obj {
+		if q["method"] == "info" {
+			return obj{"result": obj{"paneId": "w1:p1", "sessionId": "s", "instanceId": "i"}}
+		}
+		return obj{"result": obj{"forwarded": q["params"]}}
+	})
+	r.dir = filepath.Dir(socket)
+	r.discover()
+	result, err := r.handle(obj{"method": "session.commands", "params": obj{"sessionKey": "w1:p1", "expectedSessionId": "s", "expectedInstanceId": "i"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	params := object(object(result)["forwarded"])
+	if params["expectedSessionId"] != "s" || params["expectedInstanceId"] != "i" {
+		t.Fatal(params)
+	}
+}
+
 func TestLegacyBridgeNeverReceivesSlashAsModelPrompt(t *testing.T) {
 	r := fixture(t)
 	_, err := r.handle(obj{"method": "session.send", "params": obj{"sessionKey": "w1:p1", "text": "/reload"}})

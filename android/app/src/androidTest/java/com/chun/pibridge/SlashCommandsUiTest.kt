@@ -77,6 +77,34 @@ class SlashCommandsUiTest {
         ui.onNodeWithTag("modelThinkingLabel").assertTextEquals("legacy-model")
         ui.onNodeWithTag("contextUsage").assertTextEquals("--%")
     }
+    @Test fun refreshButtonRecoversFromErrorAndDisplaysNewGlmWithoutProviderPrefix() {
+        var current by mutableStateOf(catalog)
+        var error by mutableStateOf("取得失敗")
+        var refreshes = 0
+        val input = TextFieldValue("/model glm", androidx.compose.ui.text.TextRange(10))
+        ui.setContent { MaterialTheme { Box(Modifier.padding(top = 48.dp)) {
+            SlashSuggestions(input, current, false, error, onRefresh = {
+                refreshes++; error = ""
+                current = JSONObject("""{"commands":[{"name":"model","source":"builtin"}],"models":[{"value":"zai/glm-fixture","name":"GLM Fixture"}]}""")
+            }) {}
+        } } }
+        ui.onNodeWithText("取得失敗").assertIsDisplayed()
+        ui.onNodeWithTag("slashRefresh").performClick()
+        ui.onNodeWithTag("slash:zai/glm-fixture").assertIsDisplayed()
+        ui.runOnIdle { assertEquals(1, refreshes) }
+    }
+    @Test fun refreshIsDisabledDuringLoadAndPartialWarningDoesNotHideCandidates() {
+        var loading by mutableStateOf(true)
+        val partial = JSONObject(catalog.toString()).put("modelRefreshWarning", "一部だけ取得できました")
+        val input = TextFieldValue("/model ", androidx.compose.ui.text.TextRange(7))
+        ui.setContent { MaterialTheme { Box(Modifier.padding(top = 48.dp)) {
+            SlashSuggestions(input, partial, loading, "", onRefresh = { fail("disabled") }) {}
+        } } }
+        ui.onNodeWithTag("slashRefresh").assertIsNotEnabled()
+        ui.runOnIdle { loading = false }
+        ui.onNodeWithText("一部だけ取得できました").assertIsDisplayed()
+        ui.onNodeWithTag("slash:local/fixture").assertIsDisplayed()
+    }
     @Test fun loadingAndOldExtensionHaveExplicitMessages() {
         var loading by mutableStateOf(true)
         var error by mutableStateOf("")
