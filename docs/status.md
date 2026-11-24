@@ -1,5 +1,24 @@
 # 実機検証結果
 
+## 本文と表のリンク
+
+2026年11月24日、リンクをタップしても開かない問題を修正した。
+文字選択を有効にしたTextViewには既に移動処理が設定されるため、Markwonがリンク用の処理を暗黙には設定していなかった。
+文字選択を保ちつつ、短いタップだけでリンクを開くMarkdownLinkMovementを設定した。
+長押し、ドラッグ、キャンセル、複数指の操作ではリンクを開かない。
+
+本文と表内のMarkdownリンクに対応し、通常の本文中のURLもリンク化する。
+コード内のURLはリンク化せず、明示されたMarkdownのリンク先を表示ラベル内の自動リンクより優先する。
+httpとhttpsはACTION_VIEW、mailtoはACTION_SENDTO、telはACTION_DIALを使う。
+任意のintent URIやjavascript、fileなどは起動しない。
+対応アプリがない場合や起動が拒否された場合は、アプリを落とさずメッセージを表示する。
+
+リンクの実機試験10件を含む回帰58件、Android単体135件、extension53件、Go race/vet、全体checkが成功した。
+実際のMessageCardに合成メッセージを表示してタップし、外部アプリへのIntentは試験中だけ捕捉して宛先を照合する。
+本人のブラウザーのタブや外部サイトへのリクエストは使っていない。
+0.4.0とAndroid versionCode4を維持し、今回のAndroid修正にPiのreloadは不要である。
+
+
 ## AI応答のMarkdownテーブル
 
 2026年11月24日、Markdownの表が通常の文字列として表示される問題を修正した。

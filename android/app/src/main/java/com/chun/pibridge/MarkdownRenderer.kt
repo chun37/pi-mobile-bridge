@@ -23,9 +23,9 @@ import kotlin.math.max
  * A table scrolls independently rather than making the entire response wider than the chat.
  */
 internal class MarkdownMessageView(context: Context) : LinearLayout(context) {
-    private val markwon = Markwon.builder(context).usePlugin(TablePlugin.create(context)).build()
+    private val markwon = markdownBuilder(context).usePlugin(TablePlugin.create(context)).build()
     // TablePlugin replaces cell text with drawing spans; cells need the normal inline renderer.
-    private val cellMarkwon by lazy { Markwon.create(context) }
+    private val cellMarkwon by lazy { markdownBuilder(context).build() }
     private var source: String? = null
     private var foreground: Int? = null
     init { orientation = VERTICAL; tag = "markdownMessage" }
@@ -75,6 +75,7 @@ internal class MarkdownMessageView(context: Context) : LinearLayout(context) {
 
     private fun textView() = TextView(context).apply {
         tag = "markdownText"; textSize = 15f; setTextIsSelectable(true); setLineSpacing(4f, 1.08f)
+        movementMethod = MarkdownLinkMovement()
     }
     private fun dip(value: Int) = (value * resources.displayMetrics.density + .5f).toInt()
 }
@@ -97,6 +98,7 @@ internal class MarkdownTableView(context: Context) : HorizontalScrollView(contex
                 val view = TableRow(context)
                 repeat(columns) { view.addView(TextView(context).apply {
                     textSize = 15f; setTextIsSelectable(true); setLineSpacing(4f, 1.08f)
+                    movementMethod = MarkdownLinkMovement()
                     setPadding(dip(8), dip(8), dip(8), dip(8))
                 }, TableRow.LayoutParams(cellWidth(), ViewGroup.LayoutParams.MATCH_PARENT)) }
                 grid.addView(view, TableLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))

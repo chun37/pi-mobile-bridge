@@ -1,5 +1,20 @@
 # 実機試験の再実行
 
+## リンクのタップ
+
+MarkdownLinkUiTestは合成したassistantメッセージを実際のMessageCardへ渡して表示する。
+UiDeviceで本文、URLそのもの、表内のリンクをタップし、Espresso Intentsで外部アプリへの要求を捕捉する。
+リンク先とACTION_VIEWなどを照合し、本人のブラウザーのタブや外部サイトへのアクセスは使わない。
+コード内のURL、自動リンクと明示リンクの重複、余白、長押し、横スクロール、非対応URI、起動拒否も試験する。
+長押しでは文字の選択を確認し、クリップボードを読み書きしない。
+
+```bash
+adb -s "$SERIAL" shell am instrument -w \\
+  -e class com.chun.pibridge.MarkdownLinkUiTest \\
+  com.chun.pibridge.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+
 ## Markdownテーブルの表示
 
 MarkdownTableUiTestは合成したassistantメッセージを実際のMessageCardへ渡して表示する。
