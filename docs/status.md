@@ -12,8 +12,10 @@
 httpとhttpsはACTION_VIEW、mailtoはACTION_SENDTO、telはACTION_DIALを使う。
 任意のintent URIやjavascript、fileなどは起動しない。
 対応アプリがない場合や起動が拒否された場合は、アプリを落とさずメッセージを表示する。
+明示リンクのラベル内に自動リンクが重複しないようにし、既に文字が選択されている場合も短いタップで開く。
+実機試験は画面の表示だけでなく、対象ウィンドウのフォーカスと前面パッケージを待ってから1回タップする。
 
-リンクの実機試験10件を含む回帰58件、Android単体135件、extension53件、Go race/vet、全体checkが成功した。
+リンクの実機試験11件を含む回帰59件、Android単体135件、extension53件、Go race/vet、全体checkが成功した。
 実際のMessageCardに合成メッセージを表示してタップし、外部アプリへのIntentは試験中だけ捕捉して宛先を照合する。
 本人のブラウザーのタブや外部サイトへのリクエストは使っていない。
 0.4.0とAndroid versionCode4を維持し、今回のAndroid修正にPiのreloadは不要である。

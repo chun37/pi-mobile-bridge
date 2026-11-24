@@ -7,8 +7,10 @@ import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
 import android.text.Spannable
+import android.text.SpannableStringBuilder
 import android.text.method.ArrowKeyMovementMethod
 import android.text.style.ClickableSpan
+import android.text.style.URLSpan
 import android.text.util.Linkify
 import android.view.MotionEvent
 import android.view.ViewConfiguration
@@ -17,6 +19,9 @@ import android.widget.Toast
 import io.noties.markwon.AbstractMarkwonPlugin
 import io.noties.markwon.Markwon
 import io.noties.markwon.MarkwonConfiguration
+import io.noties.markwon.MarkwonVisitor
+import io.noties.markwon.core.CoreProps
+import org.commonmark.node.Link
 import io.noties.markwon.ext.tables.TableAwareMovementMethod
 import io.noties.markwon.ext.tables.TableRowSpan
 import io.noties.markwon.linkify.LinkifyPlugin
@@ -28,6 +33,19 @@ internal fun markdownBuilder(context: Context): Markwon.Builder = Markwon.builde
     .usePlugin(object : AbstractMarkwonPlugin() {
         override fun configureConfiguration(builder: MarkwonConfiguration.Builder) {
             builder.linkResolver { view, link -> openMarkdownLink(view.context, link) }
+        }
+        override fun configureVisitor(builder: MarkwonVisitor.Builder) {
+            builder.on(Link::class.java) { visitor, link ->
+                val start = visitor.length()
+                visitor.visitChildren(link)
+                // Linkify also visits explicit link labels. Remove those inner URL spans so
+                // one destination owns the range; keep bold/code and other inline spans.
+                val label = SpannableStringBuilder(visitor.builder().removeFromEnd(start))
+                label.getSpans(0, label.length, URLSpan::class.java).forEach { label.removeSpan(it) }
+                visitor.builder().append(label)
+                CoreProps.LINK_DESTINATION.set(visitor.renderProps(), link.destination)
+                visitor.setSpansForNodeOptional(link, start)
+            }
         }
     })
 
@@ -68,7 +86,7 @@ internal class MarkdownLinkMovement : ArrowKeyMovementMethod() {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 x = event.x; y = event.y; downTime = event.eventTime
-                target = if (widget.hasSelection()) null else targetAt(widget, buffer, event)
+                target = targetAt(widget, buffer, event)
             }
             MotionEvent.ACTION_MOVE -> if (abs(event.x - x) > slop || abs(event.y - y) > slop) target = null
             MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_DOWN -> target = null
