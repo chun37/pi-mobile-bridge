@@ -1,5 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
+import { refreshModels } from "./model-refresh.ts";
+
 export const RELOAD_COMMAND = "pibridge-reload";
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 const builtins = [
@@ -31,13 +33,17 @@ export function commandCatalog(pi: ExtensionAPI) {
   return [...commands, ...builtins.filter(c => !names.has(c.name)).map(c => ({ ...c, source: "builtin" }))];
 }
 
-export function modelCatalog(ctx: ExtensionContext) {
-  return ctx.modelRegistry.getAvailable().map(model => ({
-    value: `${model.provider}/${model.id}`, name: model.name, contextWindow: model.contextWindow,
-  }));
+export async function modelCatalog(ctx: ExtensionContext) {
+  const partial = await refreshModels(ctx.modelRegistry);
+  return {
+    models: ctx.modelRegistry.getAvailable().map(model => ({
+      value: `${model.provider}/${model.id}`, name: model.name, contextWindow: model.contextWindow,
+    })),
+    modelRefreshWarning: partial ? "一部のプロバイダーを更新できませんでした。取得できた候補を表示しています" : "",
+  };
 }
 
-export async function runSlashCommand(pi: ExtensionAPI, ctx: ExtensionContext, text: string) {
+export async function runSlashCommand(pi: ExtensionAPI, ctx: ExtensionContext, text: string, isCurrent: () => boolean = () => true) {
   if (!ctx.isIdle()) throw new Error("コマンドは実行が完了してから送信してください");
   const match = /^\/([^\s/]+)(?:\s+([\s\S]*))?$/.exec(text);
   if (!match) throw new Error("コマンド名を選択してください");
@@ -54,6 +60,10 @@ export async function runSlashCommand(pi: ExtensionAPI, ctx: ExtensionContext, t
   let message: string;
   switch (name) {
     case "model": {
+      const sessionId = ctx.sessionManager.getSessionId();
+      await refreshModels(ctx.modelRegistry);
+      if (!isCurrent() || ctx.sessionManager.getSessionId() !== sessionId) throw new Error("session_changed");
+      if (!ctx.isIdle()) throw new Error("コマンドは実行が完了してから送信してください");
       const matches = ctx.modelRegistry.getAvailable().filter(m => `${m.provider}/${m.id}` === args || m.id === args);
       if (matches.length !== 1) throw new Error("/model の後に候補から provider/model を選択してください");
       if (!await pi.setModel(matches[0])) throw new Error("このモデルの認証が設定されていません");

@@ -49,7 +49,7 @@ relayは診断メッセージをstdoutへ混ぜません。
 | `session.open` | `sessionKey`, 任意の`since` | `info`, `entries`, `leafId`, `seq`, `reset` |
 | `session.close` | `sessionKey` | `closed: true`（購読終了のみ） |
 | `session.terminate` | `sessionKey`, `expectedSessionId`, `expectedInstanceId`, `expectedTabId` | 確認済みのPi paneを終了し`closed: true` |
-| `session.commands` | `sessionKey` | `commands`, `models`, `thinkingLevels` |
+| `session.commands` | `sessionKey`, 任意の `expectedSessionId`, `expectedInstanceId` | `commands`, `models`, `thinkingLevels`, `modelRefreshWarning` |
 | `session.debug` | `sessionKey`, `expectedSessionId`, `expectedInstanceId` | 実行中relay、Herdr、対象Piのバージョンと識別情報 |
 | `session.reloadOutput` | `sessionKey`, `expectedSessionId` | `sessionId`, `instanceId`, `phase`, `text` |
 | `session.send` | `sessionKey`, `text`, 任意の`images`, `deliverAs`, `clientMsgId`, `expectedSessionId` | `accepted`, `clientMsgId`, `status`, コマンドでは`message` |
@@ -119,7 +119,16 @@ thinking_level_selectも詳細イベントとして転送し、一覧メタデ�
 session.commandsはPiのgetCommands()から名前、説明、sourceだけを取得します。
 sourceInfoなどにあるローカルパスは候補として転送しません。
 利用可能なモデルの候補も認証情報を含まない値だけに限定します。
-モデルやスキルの内容を取得するための外部APIは呼びません。
+取得前にModelRegistry.refresh({allowNetwork:false, signal})を待ち、保存済み認証情報とmodels.jsonを再評価します。
+拡張や会話はreloadせず、外部のモデル一覧APIや推論APIも呼びません。
+同時要求は同じregistryごとにまとめ、8秒で中断し、終了時にも中断します。
+設定読み込み失敗の詳細は転送せず、プロバイダー単位の部分失敗には定型のmodelRefreshWarningだけを付けます。
+指定されたsessionIdとinstanceIdを取得前に照合し、待機中に世代が変わった結果は返しません。
+直接入力された/model provider/idも取得前に同じ更新を待ち、変更直前に対象とidleを再確認します。
+Androidは/model候補を開き直すと再取得し、接頭辞の各入力では取得しません。
+「再取得」でも更新でき、検索はprovider/idとモデル名の部分一致に対応します。
+待機中の同一対象への要求は1回の追加取得にまとめ、古い接続や別セッションの応答は破棄します。
+今回の拡張修正を読み込んだ後は、認証情報やmodels.jsonを追加するたびの/reloadは不要です。
 
 先頭が`/`の送信は、対応するPi拡張でのみ受理します。
 古い拡張へスラッシュ文字列をそのまま通常プロンプトとして転送することはありません。

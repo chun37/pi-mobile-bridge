@@ -81,7 +81,9 @@ fun slashOptions(input: TextFieldValue, catalog: JSONObject?): List<SlashOption>
         }
         else -> emptyList()
     }
-    return candidates.filter { it.value.isNotEmpty() && it.value.startsWith(query.prefix, ignoreCase = true) }
+    return candidates.filter { it.value.isNotEmpty() && if (query.kind == "model")
+        (it.value.contains(query.prefix, ignoreCase = true) || it.description.contains(query.prefix, ignoreCase = true))
+        else it.value.startsWith(query.prefix, ignoreCase = true) }
         .distinctBy { it.value }
 }
 
@@ -98,23 +100,32 @@ fun completeSlash(input: TextFieldValue, option: SlashOption): TextFieldValue {
 
 @Composable
 fun SlashSuggestions(input: TextFieldValue, catalog: JSONObject?, loading: Boolean, error: String,
-    onSelect: (SlashOption) -> Unit) {
+    onRefresh: (() -> Unit)? = null, onSelect: (SlashOption) -> Unit) {
     if (slashQuery(input) == null) return
     val options = slashOptions(input, catalog)
     Surface(tonalElevation = 4.dp, shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
         modifier = Modifier.fillMaxWidth().testTag("slashSuggestions")) {
-        when {
-            loading -> Text("コマンド候補を取得中…", Modifier.padding(12.dp))
-            error.isNotEmpty() -> Text(error, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
-            options.isEmpty() -> Text("一致する候補がありません", Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
-            else -> LazyColumn(Modifier.heightIn(max = 200.dp)) {
-                items(options, key = { it.value }) { option ->
-                    Column(Modifier.fillMaxWidth().clickable { onSelect(option) }
-                        .testTag("slash:${option.value}").padding(horizontal = 12.dp, vertical = 7.dp)) {
-                        Text(option.label, style = MaterialTheme.typography.bodyMedium)
-                        if (option.description.isNotBlank()) Text(option.description,
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column {
+            if (onRefresh != null) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text(if (slashCatalogScope(input.text) == "model") "モデル候補" else "コマンド候補", style = MaterialTheme.typography.labelMedium)
+                TextButton(onClick = onRefresh, enabled = !loading, modifier = Modifier.testTag("slashRefresh")) { Text("再取得") }
+            }
+            val warning = (catalog?.opt("modelRefreshWarning") as? String)?.take(300).orEmpty()
+            if (!loading && error.isEmpty() && warning.isNotBlank()) Text(warning, Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall)
+            when {
+                loading -> Text("コマンド候補を取得中…", Modifier.padding(12.dp))
+                error.isNotEmpty() -> Text(error, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
+                options.isEmpty() -> Text("一致する候補がありません", Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
+                else -> LazyColumn(Modifier.heightIn(max = 200.dp)) {
+                    items(options, key = { it.value }) { option ->
+                        Column(Modifier.fillMaxWidth().clickable { onSelect(option) }
+                            .testTag("slash:${option.value}").padding(horizontal = 12.dp, vertical = 7.dp)) {
+                            Text(option.label, style = MaterialTheme.typography.bodyMedium)
+                            if (option.description.isNotBlank()) Text(option.description,
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                     }
                 }
             }

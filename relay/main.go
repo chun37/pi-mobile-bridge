@@ -389,7 +389,7 @@ func (r *relay) handle(req obj) (any, error) {
 		if e != nil {
 			return nil, e
 		}
-		return rpc(b.socket, "commands", obj{})
+		return rpc(b.socket, "commands", obj{"expectedSessionId": p["expectedSessionId"], "expectedInstanceId": p["expectedInstanceId"]})
 	case "session.send":
 		b, e := r.get(key)
 		if e != nil {

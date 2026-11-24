@@ -16,8 +16,8 @@ function fixture() {
     setSessionName: v => calls.push(['name', v]),
     sendUserMessage: (...v) => calls.push(['send', ...v]),
   };
-  const ctx = { isIdle: () => true, model: models[0], modelRegistry: { getAvailable: () => models },
-    sessionManager: { getSessionName: () => 'Fixture' },
+  const ctx = { isIdle: () => true, model: models[0], modelRegistry: { getAvailable: () => models, refresh: async () => ({ aborted: false, errors: new Map() }) },
+    sessionManager: { getSessionName: () => 'Fixture', getSessionId: () => 'fixture-session' },
     getContextUsage: () => ({ tokens: 12345, contextWindow: 100000, percent: 12.345 }),
     compact: opts => calls.push(['compact', opts]) };
   return { pi, ctx, calls };

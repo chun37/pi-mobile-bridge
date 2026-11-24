@@ -43,7 +43,8 @@ const ctx = {
   model: { id: "test-model" },
   isIdle: () => idle,
   getContextUsage: () => ({ tokens: 12345, contextWindow: 100000, percent: 12.345 }),
-  modelRegistry: { getAvailable: () => [{ id: "test-model", provider: "fixture", name: "Test", contextWindow: 100000 }] },
+  modelRegistry: { getAvailable: () => [{ id: "test-model", provider: "fixture", name: "Test", contextWindow: 100000 }],
+    refresh: async () => ({ aborted: false, errors: new Map() }) },
   abort: () => {
     aborts++;
   },
@@ -98,6 +99,28 @@ after(async () => {
   fs.rmSync(testHome, { recursive: true, force: true });
 });
 
+test("catalog rejects stale session or instance before refresh", async t => {
+  const original = ctx.modelRegistry.refresh;
+  let refreshed = 0;
+  ctx.modelRegistry.refresh = async () => { refreshed++; return { aborted: false, errors: new Map() }; };
+  t.after(() => { ctx.modelRegistry.refresh = original; });
+  for (const params of [{ expectedSessionId: 'stale' }, { expectedInstanceId: 'stale' }]) {
+    assert.equal((await req('commands', params)).error.message, 'session_changed');
+  }
+  assert.equal(refreshed, 0);
+});
+test("catalog discards refresh results after the native session changes", async t => {
+  const original = ctx.modelRegistry.refresh, originalId = ctx.sessionManager.getSessionId;
+  let finish, started;
+  const ready = new Promise(resolve => { started = resolve; });
+  ctx.modelRegistry.refresh = () => new Promise(resolve => { finish = resolve; started(); });
+  t.after(() => { ctx.modelRegistry.refresh = original; ctx.sessionManager.getSessionId = originalId; });
+  const response = req('commands');
+  await ready;
+  ctx.sessionManager.getSessionId = () => 'other-session';
+  finish({ aborted: false, errors: new Map() });
+  assert.equal((await response).error.message, 'session_changed');
+});
 test("secure socket and metadata", async () => {
   assert.equal(fs.statSync(dir).mode & 511, 448);
   assert.equal(fs.statSync(socket).mode & 511, 384);
