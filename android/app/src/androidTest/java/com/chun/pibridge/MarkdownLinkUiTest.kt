@@ -55,8 +55,12 @@ class MarkdownLinkUiTest {
         (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) } else emptyList()
     private fun text(needle:String)=descendants(host).filterIsInstance<TextView>().first { it.text.contains(needle) }
     private fun point(needle:String):Pair<Int,Int> {
+        device.waitForIdle(1000)
         var point=0 to 0
-        ui.waitUntil(5000) { var ready=false;ui.runOnIdle { ready=text(needle).layout!=null && text(needle).width>0 };ready }
+        ui.waitUntil(15000) { var ready=false;ui.runOnIdle {
+            val view=text(needle)
+            ready=view.layout!=null && view.width>0 && view.isShown && view.rootView.hasWindowFocus()
+        };ready && device.currentPackageName==InstrumentationRegistry.getInstrumentation().targetContext.packageName }
         ui.runOnIdle {
             val view=text(needle);val offset=view.text.indexOf(needle)+needle.length/2
             val layout=view.layout;val line=layout.getLineForOffset(offset)
@@ -67,7 +71,11 @@ class MarkdownLinkUiTest {
         return point
     }
     private fun external()=Intents.getIntents().filter { it.action in listOf(Intent.ACTION_VIEW,Intent.ACTION_SENDTO,Intent.ACTION_DIAL) }
-    private fun click(needle:String) { val p=point(needle);assertTrue(device.click(p.first,p.second));ui.waitForIdle() }
+    private fun click(needle:String, expected:Boolean=true) {
+        val p=point(needle);assertTrue(device.click(p.first,p.second))
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync();ui.waitForIdle()
+        if(expected) assertEquals("A short link tap must dispatch exactly one external intent",1,external().size)
+    }
     @Test fun markdownLinkTapDispatchesTheExactBrowserIntent() {
         show("前文 [説明を開く](https://example.com/one?x=1#part) 後文")
         click("説明を開く")
@@ -87,8 +95,21 @@ class MarkdownLinkUiTest {
     }
     @Test fun explicitDestinationWinsOverAnAutolinkInsideItsLabel() {
         show("[https://example.com/visible](https://example.com/destination)")
+        ui.runOnIdle {
+            val buffer=text("https://example.com/visible").text as Spanned
+            assertEquals(1,buffer.getSpans(0,buffer.length,ClickableSpan::class.java).size)
+        }
         click("https://example.com/visible")
         assertEquals("https://example.com/destination",external().single().dataString)
+    }
+    @Test fun anExistingTextSelectionDoesNotConsumeTheNextShortLinkTap() {
+        show("[選択済みリンク](https://example.com/selected)")
+        ui.runOnIdle {
+            val buffer=text("選択済みリンク").text as android.text.Spannable
+            android.text.Selection.setSelection(buffer,0,buffer.length)
+        }
+        click("選択済みリンク")
+        assertEquals("https://example.com/selected",external().single().dataString)
     }
     @Test fun codeAndFencedUrlsAreNotTurnedIntoLinks() {
         show("`https://example.com/inline`\n\n```text\nhttps://example.com/fenced\n```")
@@ -96,7 +117,7 @@ class MarkdownLinkUiTest {
             val view=text("example.com/inline");val buffer=view.text as Spanned
             assertEquals(0,buffer.getSpans(0,buffer.length,ClickableSpan::class.java).size)
         }
-        click("example.com/inline")
+        click("example.com/inline",expected=false)
         assertTrue(external().isEmpty())
     }
     @Test fun tappingWhitespaceAfterALinkDoesNotOpenIt() {
