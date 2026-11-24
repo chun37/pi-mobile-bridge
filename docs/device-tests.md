@@ -1,5 +1,22 @@
 # 実機試験の再実行
 
+## Markdownテーブルの表示
+
+MarkdownTableUiTestは合成したassistantメッセージを実際のMessageCardへ渡して表示する。
+SSH接続、Piの作成、モデルへの送信、本人の会話や写真は不要である。
+日本語、列の配置、太字とコード、横スクロール、生成途中の更新、空セル、複数表、コードブロック、表示幅と色の更新を確認する。
+横スクロールは専用Activity内の表の座標を取得し、UiDeviceの実タッチで試験する。
+初期のレイアウト完了も待ち、onSizeChangedから再レイアウトを要求する構成にはしない。
+標準のTablePluginを使うMarkwonをTable.parseへ渡すとセルが描画用の置換spanになって空文字になるため、セルには通常のMarkwonを使う。
+試験画像はアプリ内のfiles/markdown-table-proof.pngへ保存する。
+
+```bash
+adb -s "$SERIAL" shell am instrument -w \\
+  -e class com.chun.pibridge.MarkdownTableUiTest \\
+  com.chun.pibridge.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+
 ## 新しいモデル候補の再取得
 
 LiveModelsDeviceTestにはprofileIdとworkspaceIdを明示します。

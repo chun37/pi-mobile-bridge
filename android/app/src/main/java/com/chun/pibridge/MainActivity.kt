@@ -6,7 +6,6 @@ import android.content.ClipboardManager
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
-import android.widget.TextView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -37,7 +36,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
-import io.noties.markwon.Markwon
 import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.*
 import org.json.JSONObject
@@ -1260,21 +1258,9 @@ fun ColumnScope.ChatScreen(store: BridgeStore, state: BridgeState) {
 
 @Composable
 fun Markdown(text: String, color: Color = Color(0xffe4eaf2)) {
-    val context = LocalContext.current
-    val markwon = remember { Markwon.create(context) }
     AndroidView(
-        factory = {
-            TextView(it).apply {
-                setTextColor(color.toArgb())
-                setTextIsSelectable(true)
-                textSize = 15f
-                setLineSpacing(4f, 1.08f)
-            }
-        },
-        update = {
-            it.setTextColor(color.toArgb())
-            markwon.setMarkdown(it, text)
-        },
+        factory = { MarkdownMessageView(it) },
+        update = { it.bind(text, color.toArgb()) },
         modifier = Modifier.fillMaxWidth(),
     )
 }

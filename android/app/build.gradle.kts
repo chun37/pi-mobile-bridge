@@ -44,6 +44,7 @@ dependencies {
     implementation("net.i2p.crypto:eddsa:0.3.0")
     implementation("org.bouncycastle:bcpkix-jdk18on:1.78.1")
     implementation("io.noties.markwon:core:4.6.2")
+    implementation("io.noties.markwon:ext-tables:4.6.2")
     implementation("org.slf4j:slf4j-nop:2.0.13")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
