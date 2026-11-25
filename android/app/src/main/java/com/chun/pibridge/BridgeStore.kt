@@ -10,27 +10,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 
-data class BridgeState(
-    val status: String = "未接続",
-    val connected: Boolean = false,
-    val profileId: String = "",
-    val endpoint: String = "",
-    val sessions: List<JSONObject> = emptyList(),
-    val chats: Map<String, Conversation> = emptyMap(),
-    val selected: String = "",
-    val terminal: String = "",
-    val error: String = "",
-    val offeredPin: String = "",
-    val slashCatalog: JSONObject? = null,
-    val slashLoading: Boolean = false,
-    val slashError: String = "",
-    val commandNotice: String = "",
-    val reloadOutputs: Map<String, ReloadOutput> = emptyMap(),
-    val sessionStates: Map<String, SessionUiState> = emptyMap(),
-    val canTerminateSession: Boolean = false,
-    val connectionInfo: JSONObject? = null,
-)
-
 class BridgeStore private constructor(val context: Context) {
     val profiles = Profiles(context)
     val identity = Identity(context)
@@ -47,6 +26,12 @@ class BridgeStore private constructor(val context: Context) {
     private val resyncJobs = mutableMapOf<String, Job>()
     private val resyncPending = mutableSetOf<String>()
     private val transitions = StateTransitions()
+    private val terminalControl =
+        TerminalControl(scope, { m, p -> request(m, p) }, ::error) { text ->
+            mutable.value = mutable.value.copy(terminal = text)
+        }
+    private val reloadCapture = ReloadOutputCapture(scope)
+    private val catalog = CommandCatalog(scope, catalogGate)
 
     private fun observeState(key: String, state: String) {
         if (transitions.changed(key, state)) notifyState(key, state)
@@ -128,10 +113,9 @@ class BridgeStore private constructor(val context: Context) {
                     mutable.value = mutable.value.copy(sessions = sessions)
                 }
                 trace.mark("cache_parsed")
-                var retry = 0
-                var candidate = 0
+                val reconnect = ReconnectPolicy(candidates.size)
                 while (isActive) {
-                    val endpoint = candidates[candidate]
+                    val endpoint = candidates[reconnect.candidate]
                     var established = false
                     mutable.value =
                         mutable.value.copy(
@@ -182,7 +166,7 @@ class BridgeStore private constructor(val context: Context) {
                                         error = "",
                                         offeredPin = "",
                                     )
-                                retry = 0
+                                reconnect.connected()
                                 refresh()
                                 trace.mark("sessions_ready")
                                 val selected = mutable.value.selected
@@ -224,20 +208,17 @@ class BridgeStore private constructor(val context: Context) {
                             )
                         return@launch
                     } catch (e: Exception) {
-                        if (!established && candidate + 1 < candidates.size) {
-                            candidate++
+                        val backoff = reconnect.failed(established)
+                        if (backoff == 0) {
                             mutable.value = mutable.value.copy(connected = false, error = "")
                         } else {
-                            candidate = 0
-                            retry++
-                            val seconds = minOf(60, 1 shl minOf(retry - 1, 6))
                             mutable.value =
                                 mutable.value.copy(
-                                    status = "${seconds}秒後に再接続",
+                                    status = "${backoff}秒後に再接続",
                                     connected = false,
                                     error = "${addressLabel(endpoint)}: ${e.message ?: "切断"}",
                                 )
-                            delay(seconds * 1000L)
+                            delay(backoff * 1000L)
                         }
                     } finally {
                         withContext(NonCancellable + Dispatchers.IO) { c.close() }
@@ -452,14 +433,8 @@ class BridgeStore private constructor(val context: Context) {
         when (p.optString("event")) {
             "sessions.changed" -> {
                 sessionMetadataVersion++
-                val before =
-                    mutable.value.sessions.associateBy { it.optString("sessionKey") }.toMutableMap()
-                val removed = p.optJSONArray("removed")
-                if (removed != null)
-                    for (i in 0 until removed.length()) before.remove(removed.optString(i))
-                for (s in p.optJSONArray("added").objects() + p.optJSONArray("updated").objects()) {
-                    before[s.optString("sessionKey")] = s
-                }
+                val before = mutable.value.sessions.mergeSessionDelta(
+                    p.optJSONArray("added"), p.optJSONArray("updated"), p.optJSONArray("removed"))
                 val selected = mutable.value.selected
                 val previous =
                     mutable.value.sessions.find { it.optString("sessionKey") == selected }
@@ -515,34 +490,13 @@ class BridgeStore private constructor(val context: Context) {
         val sessionId = mutable.value.sessions.find { it.optString("sessionKey") == key }
             ?.opt("sessionId") as? String ?: return
         val token = UUID.randomUUID().toString()
-        fun current() = client === c && mutable.value.profileId == profile &&
-            mutable.value.reloadOutputs[key]?.requestId == token &&
-            mutable.value.sessions.any { it.optString("sessionKey") == key && it.optString("sessionId") == sessionId }
-        fun show(phase: String, text: String = "") {
+        reloadCapture.capture(key, c, sessionId, token, current = {
+            client === c && mutable.value.profileId == profile &&
+                mutable.value.reloadOutputs[key]?.requestId == token &&
+                mutable.value.sessions.any { it.optString("sessionKey") == key && it.optString("sessionId") == sessionId }
+        }) { phase, text ->
             mutable.value = mutable.value.copy(reloadOutputs = mutable.value.reloadOutputs +
                 (key to ReloadOutput(sessionId, token, phase, text)))
-        }
-        show("loading")
-        scope.launch {
-            var lastText = ""
-            repeat(6) {
-                if (!current()) return@launch
-                try {
-                    val result = c.request("session.reloadOutput", JSONObject().put("sessionKey", key)
-                        .put("expectedSessionId", sessionId), timeoutMs = 1500)
-                    if (!current()) return@launch
-                    if (result.optString("sessionId") != sessionId) return@launch
-                    lastText = result.optString("text")
-                    val phase = result.optString("phase")
-                    if (phase == "complete" || phase == "failed") {
-                        show(phase, lastText)
-                        return@launch
-                    }
-                } catch (e: CancellationException) { throw e
-                } catch (_: Exception) { /* Retry only this bounded, read-only observation. */ }
-                delay(250)
-            }
-            if (current()) show("unavailable", lastText)
         }
     }
 
@@ -557,32 +511,16 @@ class BridgeStore private constructor(val context: Context) {
             mutable.value.selected == key && mutable.value.sessions.find {
                 it.optString("sessionKey") == key }?.let {
                     it.optString("sessionId") == sessionId && it.optString("instanceId") == instanceId } == true
-        if (!current()) return
-        if (!supportsSlash(session)) {
-            mutable.value = mutable.value.copy(slashError = "PCのこのPiで /reload を1回実行してください")
-            return
-        }
-        val ticket = catalogGate.begin(CatalogTarget(activeClient, profile, generation, key, sessionId, instanceId)) ?: return
-        mutable.value = mutable.value.copy(slashLoading = true, slashError = "")
-        scope.launch {
-            try {
-                val params = JSONObject().put("sessionKey", key)
-                    .putOpt("expectedSessionId", sessionId?.takeIf { it.isNotBlank() })
-                    .putOpt("expectedInstanceId", instanceId?.takeIf { it.isNotBlank() })
-                val catalog = activeClient.request("session.commands", params)
-                if (catalogGate.owns(ticket) && current()) mutable.value = mutable.value.copy(slashCatalog = catalog)
-            } catch (e: CancellationException) { throw e
-            } catch (_: Exception) {
-                if (catalogGate.owns(ticket) && current()) mutable.value = mutable.value.copy(
-                    slashError = "候補を更新できません。「再取得」で試してください")
-            } finally {
-                val finish = catalogGate.finish(ticket)
-                if (finish != CatalogRefreshGate.Finish.STALE && current()) {
-                    mutable.value = mutable.value.copy(slashLoading = false)
-                    if (finish == CatalogRefreshGate.Finish.FOLLOW_UP) refreshCommands(key)
+        catalog.refresh(activeClient, CatalogTarget(activeClient, profile, generation, key, sessionId, instanceId),
+            supportsSlash(session), ::current, { update ->
+                mutable.value = when (update) {
+                    CommandCatalog.Update.Unsupported -> mutable.value.copy(slashError = "PCのこのPiで /reload を1回実行してください")
+                    CommandCatalog.Update.Loading -> mutable.value.copy(slashLoading = true, slashError = "")
+                    is CommandCatalog.Update.Loaded -> mutable.value.copy(slashCatalog = update.catalog)
+                    CommandCatalog.Update.Failed -> mutable.value.copy(slashError = "候補を更新できません。「再取得」で試してください")
+                    CommandCatalog.Update.Finished -> mutable.value.copy(slashLoading = false)
                 }
-            }
-        }
+            }) { refreshCommands(key) }
     }
 
     fun send(key: String, text: String, images: List<JSONObject>, delivery: String): Boolean {
@@ -625,17 +563,7 @@ class BridgeStore private constructor(val context: Context) {
                     return@launch
                 }
                 val now = mutable.value.chats[key] ?: old
-                updateChat(
-                    key,
-                    now.copy(
-                        pending =
-                            now.pending.map {
-                                if (it.optString("clientMsgId") == id)
-                                    JSONObject(it.toString()).put("status", "受付済み")
-                                else it
-                            }
-                    ),
-                )
+                updateChat(key, now.withPendingStatus(id, "受付済み"))
             } catch (e: CancellationException) { throw e
             } catch (e: Exception) {
                 if (client !== sendingClient || mutable.value.profileId != sendingProfile) return@launch
@@ -646,17 +574,7 @@ class BridgeStore private constructor(val context: Context) {
                     return@launch
                 }
                 val now = mutable.value.chats[key] ?: old
-                updateChat(
-                    key,
-                    now.copy(
-                        pending =
-                            now.pending.map {
-                                if (it.optString("clientMsgId") == id)
-                                    JSONObject(it.toString()).put("status", "未確認: 自動再送しません")
-                                else it
-                            }
-                    ),
-                )
+                updateChat(key, now.withPendingStatus(id, "未確認: 自動再送しません"))
             }
         }
         return true
@@ -674,41 +592,11 @@ class BridgeStore private constructor(val context: Context) {
         }
     }
 
-    suspend fun terminalRead(key: String) {
-        val p = request("terminal.read", JSONObject().put("paneId", key).put("source", "visible"))
-        mutable.value =
-            mutable.value.copy(
-                terminal =
-                    p.optJSONObject("read")?.optString("text") ?: p.optString("text", p.toString(2))
-            )
-    }
+    suspend fun terminalRead(key: String) = terminalControl.read(key)
 
-    fun terminalKeys(key: String, keys: List<String>) {
-        scope.launch {
-            runCatching {
-                    request(
-                        "terminal.keys",
-                        JSONObject().put("paneId", key).put("keys", JSONArray(keys)),
-                    )
-                }
-                .onFailure { error(it) }
-        }
-    }
+    fun terminalKeys(key: String, keys: List<String>) = terminalControl.keys(key, keys)
 
-    fun terminalInput(key: String, text: String) {
-        scope.launch {
-            runCatching {
-                    request(
-                        "terminal.input",
-                        JSONObject()
-                            .put("paneId", key)
-                            .put("text", text)
-                            .put("keys", JSONArray(listOf("enter"))),
-                    )
-                }
-                .onFailure { error(it) }
-        }
-    }
+    fun terminalInput(key: String, text: String) = terminalControl.input(key, text)
 
     companion object {
         @Volatile private var instance: BridgeStore? = null

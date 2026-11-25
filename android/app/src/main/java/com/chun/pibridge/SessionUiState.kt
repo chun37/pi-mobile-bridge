@@ -1,5 +1,6 @@
 package com.chun.pibridge
 
+import org.json.JSONArray
 import org.json.JSONObject
 
 /** The only execution state consumed by UI, command guards, sorting and notifications. */
@@ -122,3 +123,16 @@ fun BridgeState.withSessionUi(key: String, value: SessionUiState): BridgeState =
     sessionStates = sessionStates + (key to value),
     sessions = sessions.map { if (it.optString("sessionKey") == key) JSONObject(it.toString()).put("state", value.phase) else it },
 )
+
+/** Merge a sessions.changed delta into the current list, keyed by sessionKey and in order.
+ * Updated sessions replace in place, added ones append and removed keys disappear. */
+fun List<JSONObject>.mergeSessionDelta(
+    added: JSONArray?,
+    updated: JSONArray?,
+    removed: JSONArray?,
+): Map<String, JSONObject> {
+    val merged = associateBy { it.optString("sessionKey") }.toMutableMap()
+    if (removed != null) for (i in 0 until removed.length()) merged.remove(removed.optString(i))
+    for (s in added.objects() + updated.objects()) merged[s.optString("sessionKey")] = s
+    return merged
+}
