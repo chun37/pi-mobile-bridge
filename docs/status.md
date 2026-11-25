@@ -15,7 +15,9 @@ fixtureを必要とするBridgeUiTestとEndpointUiTestは実行していない�
 専用のPi TUIで拡張を読み込み、info、history、commands、send、subscribe、ツール実行時間の記録、終了後のソケット削除を確認した。
 実機試験の実行中に前面へ出た他のアプリがタップを受け、MarkdownLinkUiTestが1件失敗した。
 前面がPi Bridgeに戻った状態で再実行し、77件が成功した。
-実機には分割後のworktreeビルドを導入済みであり、mainへ反映した後でクリーンなAPKへ導入し直す。
+PR #17をマージし、mainはca595f2f35ac7d332c55df05f2f444d7c486c567になった。
+mainからビルドしたクリーンなAPKをNX789Jへ導入し、端末のbase.apkのSHA-256はaccacb796bf0d6d85e0d150be2ffe166de49998251efb93fb36f291ec1344aacで作成したAPKと一致した。
+既存のPiは拡張を/reloadで読み込みし直すまで、分割前のindex.tsを動かす。
 
 
 ## 本文と表のリンク
