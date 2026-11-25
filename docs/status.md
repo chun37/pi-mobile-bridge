@@ -1,5 +1,23 @@
 # 実機検証結果
 
+## 画面、状態管理、拡張のファイル分割
+
+2026年11月25日、本人の指示でAndroidの画面、BridgeStore、Pi拡張を責務ごとのファイルへ分割した。
+動作を変えない分割であり、リリース番号は0.4.0、Android versionCode4を維持する。
+MainActivity.ktに集まっていた画面を、Activity本体、BridgeApp（ConnectionCardを含む）、SessionList、SettingsScreen、ChatScreen、MessageCard、StateBadgeの各ファイルへ分けた。
+BridgeStore.ktからBridgeState、ターミナル入出力のTerminalControl、再読み込み出力のReloadOutputCapture、再接続の候補順と待ち時間のReconnectPolicy、スラッシュコマンド候補のCommandCatalogを取り出した。
+セッション一覧への差分適用と送信待ちの下書き状態は純粋な関数にした。
+extension/index.tsから履歴、セッション情報、ソケットパス、送信の検証、ツール実行時間を別モジュールへ移した。
+追加した単体試験はAndroid7件、extension14件である。
+全体check、Android単体142件、extension67件、Go race/vet、lint、APK作成が成功した。
+実機UI77件が成功した。
+fixtureを必要とするBridgeUiTestとEndpointUiTestは実行していない。
+専用のPi TUIで拡張を読み込み、info、history、commands、send、subscribe、ツール実行時間の記録、終了後のソケット削除を確認した。
+実機試験の実行中に前面へ出た他のアプリがタップを受け、MarkdownLinkUiTestが1件失敗した。
+前面がPi Bridgeに戻った状態で再実行し、77件が成功した。
+実機には分割後のworktreeビルドを導入済みであり、mainへ反映した後でクリーンなAPKへ導入し直す。
+
+
 ## 本文と表のリンク
 
 2026年11月24日、リンクをタップしても開かない問題を修正した。

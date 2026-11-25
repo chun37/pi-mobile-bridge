@@ -166,6 +166,14 @@ data class Conversation(
     val sessionId: String = "",
     val instanceId: String = "",
 ) {
+    /** Mark the pending draft with [clientMsgId] as [status]; other drafts are kept as is. */
+    fun withPendingStatus(clientMsgId: String, status: String) = copy(
+        pending = pending.map {
+            if (it.optString("clientMsgId") == clientMsgId) JSONObject(it.toString()).put("status", status)
+            else it
+        }
+    )
+
     fun json() =
         JSONObject()
             .put("entries", JSONArray(entries))

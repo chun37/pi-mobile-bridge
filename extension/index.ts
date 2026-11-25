@@ -1,34 +1,28 @@
 import net from "node:net";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { randomUUID } from "node:crypto";
-import { VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
 import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 
-import { commandCatalog, contextUsage, modelCatalog, RELOAD_COMMAND, runSlashCommand, THINKING_LEVELS } from "./commands.ts";
+import { commandCatalog, modelCatalog, RELOAD_COMMAND, runSlashCommand, THINKING_LEVELS } from "./commands.ts";
 
 import { ExecutionState } from "./execution.ts";
 import { cancelModelRefresh } from "./model-refresh.ts";
+import { buildHistory, type OriginTag } from "./history.ts";
+import { buildInfo } from "./session-info.ts";
+import { prepareBridgeDir, removeStaleSocket } from "./socket-path.ts";
+import { validateSend } from "./send-validation.ts";
+import { FORWARDED_EVENTS, ToolTimings } from "./tool-timings.ts";
 
 import { VERSION } from "./version.generated.ts";
 import { captureBuildInfo } from "./build-info.ts";
 export { VERSION };
 const BUILD_INFO = Object.freeze(captureBuildInfo(import.meta.url));
 export const MAX_FRAME = 24 * 1024 * 1024;
-type WireEntry = {
-  entryId: string;
-  timestamp: string;
-  message?: unknown;
-  origin?: string;
-  clientMsgId?: string;
-  note?: string;
-  text?: string;
-};
 
 // LF only: U+2028/U+2029 are valid content, not wire separators.
 export function parseLines(
@@ -75,7 +69,7 @@ export default function bridge(pi: ExtensionAPI) {
   const pending: { text: string; clientMsgId: string; timestamp: number }[] =
     [];
   const accepted = new Map<string, { fingerprint: string; result: any }>();
-  const origins = new Map<number, { origin: string; clientMsgId?: string }>();
+  const origins = new Map<number, OriginTag>();
   const inputOrigins: {
     text: string;
     hasImages: boolean;
@@ -83,8 +77,7 @@ export default function bridge(pi: ExtensionAPI) {
     clientMsgId?: string;
   }[] = [];
   let lastSyncedId: string | undefined;
-  const toolStarts = new Map<string, number>();
-  const toolDurations = new Map<string, number>();
+  const tools = new ToolTimings();
 
   function write(s: net.Socket, v: any) {
     if (s.destroyed) return;
@@ -101,92 +94,11 @@ export default function bridge(pi: ExtensionAPI) {
     for (const [s, subscribed] of clients) if (subscribed) write(s, packet);
   }
   function info() {
-    const sm = ctx!.sessionManager;
-    const assistant = [...sm.getBranch()]
-      .reverse()
-      .find(
-        (e: any) => e.type === "message" && e.message.role === "assistant",
-      ) as any;
-    const lastResponse =
-      assistant?.message.content
-        ?.filter((p: any) => p.type === "text")
-        .map((p: any) => p.text)
-        .join("\n")
-        .split("\n")[0]
-        ?.slice(0, 240) ?? "";
-    return {
-      paneId: process.env.HERDR_PANE_ID,
-      herdrSocket: process.env.HERDR_SOCKET_PATH,
-      pid: process.pid,
-      sessionId: sm.getSessionId(),
-      sessionFile: sm.getSessionFile(),
-      sessionName: sm.getSessionName(),
-      cwd: ctx!.cwd,
-      model: ctx!.model?.id,
-      thinkingLevel: pi.getThinkingLevel(),
-      contextUsage: contextUsage(ctx!),
-      capabilities: ["slashCommands", "contextUsage", "executionState"],
-      idle: ctx!.isIdle(),
-      execution: execution.snapshot(seq, ctx!.isIdle()),
-      lastEntryId: sm.getLeafId(),
-      lastResponse,
-      startReason,
-      instanceId,
-      bridgeVersion: VERSION,
-      build: BUILD_INFO,
-      runtime: { piVersion: PI_VERSION, nodeVersion: process.version, platform: process.platform, arch: process.arch },
-    };
+    return buildInfo(pi, ctx!, { seq, execution, startReason, instanceId, bridgeVersion: VERSION, build: BUILD_INFO });
   }
   function history(since?: string) {
-    const branch = ctx!.sessionManager.getBranch();
-    const index = since ? branch.findIndex((e) => e.id === since) : -1;
-    const reset = !!since && index < 0;
-    const entries = branch
-      .slice(index < 0 ? 0 : index + 1)
-      .flatMap<WireEntry>((e: any) => {
-        if (e.type === "message" && e.message.role !== "system") {
-          const origin = origins.get(e.message.timestamp) ?? { origin: "pc" };
-          return [
-            {
-              entryId: e.id,
-              timestamp: e.timestamp,
-              message:
-                e.message.role === "toolResult" &&
-                toolDurations.has(e.message.toolCallId)
-                  ? {
-                      ...e.message,
-                      durationMs: toolDurations.get(e.message.toolCallId),
-                    }
-                  : e.message,
-              ...origin,
-            },
-          ];
-        }
-        if (e.type === "custom_message" && e.display !== false)
-          return [
-            {
-              entryId: e.id,
-              timestamp: e.timestamp,
-              message: {
-                role: "custom",
-                content: e.content,
-                timestamp: Date.parse(e.timestamp),
-              },
-              origin: "pc",
-            },
-          ];
-        if (["compaction", "branch_summary", "model_change"].includes(e.type))
-          return [
-            {
-              entryId: e.id,
-              timestamp: e.timestamp,
-              note: e.type,
-              text: e.summary ?? e.modelId,
-            },
-          ];
-        return [];
-      });
-    return { entries, leafId: ctx!.sessionManager.getLeafId(), reset, seq, info: info() };
+    const sm = ctx!.sessionManager;
+    return buildHistory(sm.getBranch(), sm.getLeafId(), { since, seq, info: info(), origins, toolDurations: tools.durations });
   }
   async function request(s: net.Socket, req: any) {
     const id = typeof req?.id === "string" ? req.id : "";
@@ -226,68 +138,42 @@ export default function bridge(pi: ExtensionAPI) {
         case "send": {
           if (p.expectedSessionId != null && p.expectedSessionId !== ctx.sessionManager.getSessionId())
             throw new Error("session_changed");
-          if (typeof p.text !== "string" || p.text.length > 1000000)
-            throw new Error("invalid_text");
-          if (
-            typeof p.clientMsgId !== "string" ||
-            !p.clientMsgId ||
-            p.clientMsgId.length > 128
-          )
-            throw new Error("invalid_clientMsgId");
-          if (p.deliverAs && !["steer", "followUp"].includes(p.deliverAs))
-            throw new Error("invalid_delivery");
-          const images = p.images ?? [];
-          if (!Array.isArray(images) || images.length > 4)
-            throw new Error("invalid_images");
-          for (const im of images) {
-            if (
-              !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(
-                im.mimeType,
-              ) ||
-              typeof im.data !== "string" ||
-              im.data.length > 6 * 1024 * 1024 ||
-              !/^[A-Za-z0-9+/]*={0,2}$/.test(im.data)
-            )
-              throw new Error("invalid_image");
-          }
-          if (!p.text.trim() && !images.length)
-            throw new Error("empty_message");
-          const fingerprint = JSON.stringify([p.text, images, p.deliverAs]);
-          const previous = accepted.get(p.clientMsgId);
+          const send = validateSend(p);
+          const previous = accepted.get(send.clientMsgId);
           if (previous) {
-            if (previous.fingerprint !== fingerprint)
+            if (previous.fingerprint !== send.fingerprint)
               throw new Error("clientMsgId_conflict");
             result = previous.result;
             break;
           }
           const idle = ctx.isIdle();
-          if (p.text.startsWith("/")) {
-            if (images.length) throw new Error("コマンドに画像は添付できません");
+          if (send.text.startsWith("/")) {
+            if (send.images.length) throw new Error("コマンドに画像は添付できません");
             if (!idle) throw new Error("コマンドは実行が完了してから送信してください");
             // Reserve before any asynchronous model change or command dispatch.
-            accepted.set(p.clientMsgId, { fingerprint, result: {
-              status: "command", clientMsgId: p.clientMsgId,
+            accepted.set(send.clientMsgId, { fingerprint: send.fingerprint, result: {
+              status: "command", clientMsgId: send.clientMsgId,
               message: "前回のコマンド処理結果は未確認です。自動では再実行しません",
             } });
             if (accepted.size > 2048) accepted.delete(accepted.keys().next().value!);
             const sessionId = ctx.sessionManager.getSessionId();
             const generation = instanceId;
-            result = { accepted: true, ...await runSlashCommand(pi, ctx, p.text,
-              () => enabled && ctx?.sessionManager.getSessionId() === sessionId && instanceId === generation), clientMsgId: p.clientMsgId };
-            accepted.set(p.clientMsgId, { fingerprint, result });
+            result = { accepted: true, ...await runSlashCommand(pi, ctx, send.text,
+              () => enabled && ctx?.sessionManager.getSessionId() === sessionId && instanceId === generation), clientMsgId: send.clientMsgId };
+            accepted.set(send.clientMsgId, { fingerprint: send.fingerprint, result });
             break;
           }
           if (pending.length >= 2048) throw new Error("input_queue_full");
           const marker = {
-            text: p.text,
-            clientMsgId: p.clientMsgId,
+            text: send.text,
+            clientMsgId: send.clientMsgId,
             timestamp: Date.now(),
           };
           pending.push(marker);
           try {
             const content = [
-              { type: "text" as const, text: p.text },
-              ...images.map((im: any) => ({
+              { type: "text" as const, text: send.text },
+              ...send.images.map((im: any) => ({
                 type: "image" as const,
                 mimeType: im.mimeType,
                 data: im.data,
@@ -295,7 +181,7 @@ export default function bridge(pi: ExtensionAPI) {
             ];
             await pi.sendUserMessage(
               content,
-              idle ? {} : { deliverAs: p.deliverAs ?? "followUp" },
+              idle ? {} : { deliverAs: send.deliverAs ?? "followUp" },
             );
           } catch (e) {
             const at = pending.indexOf(marker);
@@ -304,9 +190,9 @@ export default function bridge(pi: ExtensionAPI) {
           }
           result = {
             status: idle ? "started" : "queued",
-            clientMsgId: p.clientMsgId,
+            clientMsgId: send.clientMsgId,
           };
-          accepted.set(p.clientMsgId, { fingerprint, result });
+          accepted.set(send.clientMsgId, { fingerprint: send.fingerprint, result });
           if (accepted.size > 2048)
             accepted.delete(accepted.keys().next().value!);
           break;
@@ -350,31 +236,14 @@ export default function bridge(pi: ExtensionAPI) {
     startReason = event.reason;
     execution = new ExecutionState();
     instanceId = randomUUID();
-    const dir = path.join(os.homedir(), ".pi", "agent", "bridge");
-    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    const st = fs.lstatSync(dir);
-    if (
-      !st.isDirectory() ||
-      st.isSymbolicLink() ||
-      st.uid !== process.getuid?.()
-    )
-      throw new Error("unsafe_bridge_directory");
-    fs.chmodSync(dir, 0o700);
+    const dir = prepareBridgeDir();
     socketPath = path.join(dir, `${process.pid}.sock`);
     // A stale file is removed only at our own PID path, never another bridge's path.
-    try {
-      const st = fs.lstatSync(socketPath);
-      if (!st.isSocket() || st.uid !== process.getuid?.())
-        throw new Error("unsafe_socket");
-      fs.unlinkSync(socketPath);
-    } catch (e: any) {
-      if (e.code !== "ENOENT") throw e;
-    }
-    toolStarts.clear();
-    toolDurations.clear();
+    removeStaleSocket(socketPath);
+    tools.clear();
     for (const e of ctx.sessionManager.getBranch() as any[]) {
       if (e.type === "custom" && e.customType === "pi-bridge-tool")
-        toolDurations.set(e.data.toolCallId, e.data.durationMs);
+        tools.durations.set(e.data.toolCallId, e.data.durationMs);
       if (e.type === "custom" && e.customType === "pi-bridge-origin")
         origins.set(e.data.timestamp, e.data);
     }
@@ -453,24 +322,7 @@ export default function bridge(pi: ExtensionAPI) {
       emit("message_start", { ...event, ...tag });
     } else emit("message_start", event);
   });
-  const events = [
-    "message_update",
-    "message_end",
-    "tool_execution_start",
-    "tool_execution_update",
-    "tool_execution_end",
-    "agent_start",
-    "agent_end",
-    "agent_settled",
-    "session_info_changed",
-    "model_select",
-    "thinking_level_select",
-    "session_compact",
-    "session_tree",
-    "ui_prompt_start",
-    "ui_prompt_end",
-  ] as const;
-  for (const name of events)
+  for (const name of FORWARDED_EVENTS)
     pi.on(name as any, (event: any, context: ExtensionContext) => {
       if (!enabled) return;
       ctx = context;
@@ -486,14 +338,10 @@ export default function bridge(pi: ExtensionAPI) {
         });
       }
       let timing: { durationMs?: number } = {};
-      if (name === "tool_execution_start")
-        toolStarts.set(event.toolCallId, performance.now());
+      if (name === "tool_execution_start") tools.start(event.toolCallId);
       if (name === "tool_execution_end") {
-        const start = toolStarts.get(event.toolCallId);
-        if (start !== undefined) {
-          const durationMs = Math.max(0, Math.round(performance.now() - start));
-          toolStarts.delete(event.toolCallId);
-          toolDurations.set(event.toolCallId, durationMs);
+        const durationMs = tools.end(event.toolCallId);
+        if (durationMs !== undefined) {
           pi.appendEntry("pi-bridge-tool", {
             toolCallId: event.toolCallId,
             durationMs,
